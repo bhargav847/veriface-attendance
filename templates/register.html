@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VeriFace">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" type="image/png" href="/static/icons/favicon.png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <title>Biometric Face ID Enrollment - VeriFace</title>
+  <!-- Theme Initialization Script (Runs synchronously to eliminate FOUT) -->
+  <script src="/static/js/theme.js"></script>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class'
+    }
+  </script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Liquid Glass Design Styles -->
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <!-- Face API Script -->
+  <script defer src="/static/js/face-api.min.js"></script>
+  <!-- Registration Script -->
+  <script defer src="/static/js/register.js"></script>
+</head>
+<body class="min-h-screen flex flex-col text-slate-800 dark:text-slate-100 relative selection:bg-blue-500 selection:text-white">
+
+  <!-- Ambient Fluid Liquid Background Canvas & Floating Orbs -->
+  <div class="liquid-bg-canvas" aria-hidden="true">
+    <div class="liquid-orb liquid-orb-1"></div>
+    <div class="liquid-orb liquid-orb-2"></div>
+    <div class="liquid-orb liquid-orb-3"></div>
+    <div class="liquid-orb liquid-orb-4"></div>
+  </div>
+
+  <!-- Header / Navigation -->
+  <header class="liquid-glass border-b border-white/60 dark:border-white/10 sticky top-0 z-40 shadow-sm backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-2 sm:space-x-3 min-w-0">
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/25 flex-shrink-0">
+          <i data-lucide="scan-face" class="w-5 h-5 sm:w-6 sm:h-6"></i>
+        </div>
+        <div class="min-w-0">
+          <h1 class="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight leading-none truncate">{{ institution_name }}</h1>
+          <p class="hidden sm:block text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">Biometric Face Enrollment & Identity Registration</p>
+        </div>
+      </div>
+
+      <nav class="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
+        <a href="/" class="liquid-btn-glass px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5" title="Check-in">
+          <i data-lucide="camera" class="w-4 h-4"></i>
+          <span class="hidden sm:inline">Check-in</span>
+        </a>
+        <a href="/register" class="liquid-btn-primary px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm" title="Register Face ID">
+          <i data-lucide="user-plus" class="w-4 h-4"></i>
+          <span class="hidden md:inline">Register</span>
+        </a>
+        <a href="/lecturer" class="liquid-btn-glass px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold text-purple-600 dark:text-purple-400 border-purple-200/50 dark:border-purple-500/30 flex items-center gap-1.5" title="Lecturer Portal">
+          <i data-lucide="graduation-cap" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+          <span class="hidden md:inline">Lecturer</span>
+        </a>
+        <a href="/host" class="liquid-btn-glass px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold text-blue-600 dark:text-blue-400 border-blue-200/50 dark:border-blue-500/30 flex items-center gap-1.5" title="Host Portal">
+          <i data-lucide="shield-check" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
+          <span class="hidden lg:inline">Host</span>
+        </a>
+        <!-- Stable Dark Mode Toggle Button -->
+        <button type="button" onclick="toggleTheme()" class="theme-toggle-btn ml-1" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
+          <span class="theme-icon-container">
+            <i data-lucide="moon" class="w-4 h-4 text-slate-700 dark:text-amber-300"></i>
+          </span>
+        </button>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col justify-center relative z-10">
+    
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+      
+      <!-- Biometric Enrollment Camera Viewport -->
+      <div class="lg:col-span-7 flex flex-col items-center">
+        <div class="w-full scanner-viewport-wrapper aspect-[4/3] max-w-2xl relative shadow-2xl rounded-3xl overflow-hidden border border-white/60 dark:border-white/20">
+          
+          <!-- Live Video Stream -->
+          <video id="regVideo" class="scanner-video" autoplay playsinline muted></video>
+          
+          <!-- Canvas Overlay for live facial landmarks -->
+          <canvas id="regCanvasOverlay" class="scanner-canvas-overlay"></canvas>
+          
+          <!-- Cyber Reticle Overlay -->
+          <div id="hudReticle" class="scanner-hud-reticle">
+            <div class="corner-bracket reticle-tl"></div>
+            <div class="corner-bracket reticle-tr"></div>
+            <div class="corner-bracket reticle-bl"></div>
+            <div class="corner-bracket reticle-br"></div>
+            <div class="scanner-laser-beam"></div>
+          </div>
+
+          <!-- Face Oval Guide -->
+          <div id="faceOvalGuide" class="face-oval-guide"></div>
+
+          <!-- Top-Left Camera Status Badge -->
+          <div class="absolute top-4 left-4 z-30">
+            <div id="cameraStatusBadge" class="inline-flex items-center px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-900/85 backdrop-blur-md text-white border border-slate-700 shadow-lg">
+              <span id="statusDot" class="w-2.5 h-2.5 rounded-full bg-blue-500 mr-2 animate-pulse"></span>
+              <span id="cameraStatusText">Initializing Biometric Sensor...</span>
+            </div>
+          </div>
+
+          <!-- Bottom Quality Guidance -->
+          <div class="absolute bottom-4 inset-x-4 z-30 text-center">
+            <div class="inline-block px-4 py-2 rounded-xl bg-slate-950/90 backdrop-blur-md text-slate-200 text-xs font-medium border border-slate-800">
+              ⚡ Center your face inside the oval until the frame turns green
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Enrollment Quality Tips -->
+        <div class="mt-4 grid grid-cols-3 gap-3 w-full max-w-2xl text-center text-xs">
+          <div class="p-3 rounded-2xl liquid-glass border border-white/70 dark:border-white/10 shadow-sm flex items-center justify-center gap-2">
+            <span class="text-base">💡</span>
+            <span class="text-slate-700 dark:text-slate-300 font-medium">Even Lighting</span>
+          </div>
+          <div class="p-3 rounded-2xl liquid-glass border border-white/70 dark:border-white/10 shadow-sm flex items-center justify-center gap-2">
+            <span class="text-base">👓</span>
+            <span class="text-slate-700 dark:text-slate-300 font-medium">Remove Tinted Glasses</span>
+          </div>
+          <div class="p-3 rounded-2xl liquid-glass border border-white/70 dark:border-white/10 shadow-sm flex items-center justify-center gap-2">
+            <span class="text-base">👤</span>
+            <span class="text-slate-700 dark:text-slate-300 font-medium">Single Person in Frame</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Registration Form -->
+      <div class="lg:col-span-5 flex flex-col">
+        <div class="liquid-glass rounded-3xl p-6 sm:p-8 border border-white/70 dark:border-white/10 shadow-xl">
+          
+          <div class="border-b border-slate-200/60 dark:border-white/10 pb-5 mb-6">
+            <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50/80 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-bold uppercase tracking-wider mb-2 border border-blue-200/60 dark:border-blue-800/60">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5"></i> One-Time Registration
+            </div>
+            <h2 class="text-xl font-black text-slate-900 dark:text-white tracking-tight">Enroll Student Biometric Profile</h2>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Register your Roll Number, Name, and Face ID for automated attendance.</p>
+          </div>
+
+          <form id="registerForm" class="space-y-4">
+            
+            <!-- Roll Number Input -->
+            <div>
+              <label for="rollNo" class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                Roll Number / Student ID <span class="text-rose-500">*</span>
+              </label>
+              <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                  <i data-lucide="hash" class="w-4 h-4"></i>
+                </div>
+                <input 
+                  type="text" 
+                  id="rollNo" 
+                  required 
+                  class="block w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white font-mono text-sm font-semibold placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent uppercase transition-all shadow-sm"
+                  placeholder="e.g. 21CS045"
+                />
+              </div>
+            </div>
+
+            <!-- Full Name Input -->
+            <div>
+              <label for="fullName" class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                Full Legal Name <span class="text-rose-500">*</span>
+              </label>
+              <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                  <i data-lucide="user" class="w-4 h-4"></i>
+                </div>
+                <input 
+                  type="text" 
+                  id="fullName" 
+                  required 
+                  class="block w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all shadow-sm"
+                  placeholder="e.g. Alex Morgan"
+                />
+              </div>
+            </div>
+
+            <!-- Department / Course -->
+            <div>
+              <label for="department" class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">
+                Department / Program
+              </label>
+              <div class="relative">
+                <div class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                  <i data-lucide="graduation-cap" class="w-4 h-4"></i>
+                </div>
+                <input 
+                  type="text" 
+                  id="department" 
+                  class="block w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white text-sm font-medium placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all shadow-sm"
+                  placeholder="e.g. Computer Science & Engineering"
+                  value="Computer Science"
+                />
+              </div>
+            </div>
+
+            <!-- Action Button (Liquid Glass Button with Depth & Dynamic Glow) -->
+            <div class="pt-2">
+              <button 
+                type="submit" 
+                id="captureBtn" 
+                disabled 
+                class="w-full py-3.5 px-6 rounded-2xl liquid-btn-primary font-bold text-sm tracking-wide flex items-center justify-center transition-all opacity-50 cursor-not-allowed"
+              >
+                <i data-lucide="scan-face" class="w-5 h-5 mr-2"></i>
+                Capture & Register Face ID
+              </button>
+            </div>
+
+            <!-- Alerts Container -->
+            <div id="alertContainer"></div>
+
+          </form>
+
+          <!-- Security Disclosure -->
+          <div class="mt-6 pt-5 border-t border-slate-200/60 dark:border-white/10 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+            🔒 <strong>Biometric Privacy Notice:</strong> Face scans are computed into mathematical 128-dimensional embedding vectors for verification purposes. All data is encrypted and saved securely in the institutional attendance database.
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- Registration Success Modal -->
+  <div id="successModal" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/75 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="liquid-glass rounded-3xl max-w-md w-full shadow-2xl border border-white/70 dark:border-white/20 overflow-hidden transform transition-all animate-in fade-in zoom-in-95 duration-200">
+      
+      <div class="bg-gradient-to-r from-emerald-600 to-teal-700 px-6 py-6 text-white text-center">
+        <div class="w-14 h-14 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-inner">
+          <i data-lucide="check-check" class="w-8 h-8 text-white"></i>
+        </div>
+        <h3 class="text-xl font-bold">Face ID Enrolled Successfully!</h3>
+        <p class="text-xs text-emerald-100 mt-1">Biometric credentials have been registered in the database.</p>
+      </div>
+
+      <div class="p-6 text-center space-y-4">
+        <div class="relative inline-block mx-auto">
+          <img id="modalStudentAvatar" class="w-24 h-24 rounded-2xl object-cover border-4 border-emerald-100 dark:border-emerald-900 shadow-md" src="" alt="Student Face" />
+          <div class="absolute -bottom-1 -right-1 bg-emerald-500 text-white rounded-full p-1 shadow">
+            <i data-lucide="check" class="w-3.5 h-3.5"></i>
+          </div>
+        </div>
+
+        <div>
+          <h4 id="modalStudentName" class="text-lg font-bold text-slate-900 dark:text-white"></h4>
+          <p class="font-mono text-sm font-bold text-blue-600 dark:text-blue-400 mt-0.5" id="modalStudentRoll"></p>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5" id="modalStudentDept"></p>
+        </div>
+
+        <div class="p-3 bg-emerald-50 dark:bg-emerald-950/40 rounded-xl border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 text-xs">
+          ✅ Your Face ID is now active. You can now use your face scan to mark daily attendance.
+        </div>
+      </div>
+
+      <div class="px-6 py-4 bg-white/70 dark:bg-slate-800/80 border-t border-white/80 dark:border-white/10 flex items-center gap-3">
+        <button onclick="location.reload()" class="w-1/2 py-2.5 text-xs font-semibold liquid-btn-glass">
+          Register Another
+        </button>
+        <a href="/" class="w-1/2 py-2.5 text-xs font-bold liquid-btn-primary text-center flex items-center justify-center gap-1.5">
+          <span>Go to Check-in</span>
+          <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Lucide icons trigger -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (window.lucide) lucide.createIcons();
+    });
+  </script>
+</body>
+</html>

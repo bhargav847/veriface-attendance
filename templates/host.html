@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="VeriFace">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" type="image/png" href="/static/icons/favicon.png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <title>Host & Admin Oversight Portal - VeriFace</title>
+  <!-- Theme Initialization Script (Runs synchronously to eliminate FOUT) -->
+  <script src="/static/js/theme.js"></script>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class'
+    }
+  </script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Liquid Glass Design Styles -->
+  <link rel="stylesheet" href="/static/css/styles.css">
+  <!-- Host Script -->
+  <script defer src="/static/js/host.js"></script>
+</head>
+<body class="min-h-screen flex flex-col text-slate-800 dark:text-slate-100 relative selection:bg-blue-500 selection:text-white">
+
+  <!-- Ambient Fluid Liquid Background Canvas & Floating Orbs -->
+  <div class="liquid-bg-canvas" aria-hidden="true">
+    <div class="liquid-orb liquid-orb-1"></div>
+    <div class="liquid-orb liquid-orb-2"></div>
+    <div class="liquid-orb liquid-orb-3"></div>
+    <div class="liquid-orb liquid-orb-4"></div>
+  </div>
+
+  <!-- Host PIN Authentication Modal (Shown when not authenticated) -->
+  <div id="hostAuthModal" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/75 backdrop-blur-xl flex items-center justify-center p-4">
+    <div class="liquid-glass rounded-3xl max-w-sm w-full p-8 text-center shadow-2xl border border-white/70 dark:border-white/20 relative">
+      <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
+        <i data-lucide="shield-check" class="w-8 h-8"></i>
+      </div>
+      <h3 class="text-xl font-black text-slate-900 dark:text-white">Host Access Verification</h3>
+      <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Please enter your Host / Administrator PIN to access the audit console.</p>
+      
+      <form id="hostPinForm" class="mt-6 space-y-4">
+        <div>
+          <input 
+            type="password" 
+            id="hostPinInput" 
+            maxlength="20"
+            class="block w-full py-3 px-4 text-center tracking-widest text-lg font-mono font-black rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all shadow-sm"
+            placeholder="••••••"
+            autofocus
+            required
+          />
+          <div id="pinErrorMsg" class="hidden text-xs text-rose-600 dark:text-rose-400 font-semibold mt-2"></div>
+        </div>
+
+        <button type="submit" class="w-full py-3 rounded-xl liquid-btn-primary font-bold text-xs uppercase tracking-wider shadow-md transition-all">
+          Unlock Dashboard
+        </button>
+
+        <p class="text-[11px] text-slate-400">Default PIN: <code class="font-mono text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/10">admin123</code></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main Authenticated Host Interface -->
+  <div id="hostDashboardContainer" class="hidden flex-1 flex flex-col relative z-10">
+    
+    <!-- Top Header -->
+    <header class="liquid-glass border-b border-white/60 dark:border-white/10 sticky top-0 z-40 shadow-sm backdrop-blur-md">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-2xl bg-slate-900 dark:bg-slate-800 flex items-center justify-center text-white font-bold shadow-md border border-white/10">
+            <i data-lucide="shield-alert" class="w-5 h-5 text-blue-400"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="text-base font-black text-slate-900 dark:text-white tracking-tight leading-none">Host Command Center</h1>
+              <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">Admin Live</span>
+            </div>
+            <p class="text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">{{ institution_name }}</p>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-2 sm:space-x-2.5">
+          <a href="/" target="_blank" class="liquid-btn-glass px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1">
+            <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+            <span class="hidden sm:inline">Student Check-in</span>
+          </a>
+          <a href="/lecturer" target="_blank" class="liquid-btn-glass px-3 py-1.5 rounded-xl text-xs font-semibold text-purple-600 dark:text-purple-400 border-purple-200/50 dark:border-purple-500/30 flex items-center gap-1">
+            <i data-lucide="graduation-cap" class="w-3.5 h-3.5 text-purple-600 dark:text-purple-400"></i>
+            <span class="hidden sm:inline">Lecturer Portal</span>
+          </a>
+          <button onclick="exportAttendanceCSV()" class="liquid-btn-emerald px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i>
+            <span>Export CSV</span>
+          </button>
+          <!-- Stable Dark Mode Toggle Button -->
+          <button type="button" onclick="toggleTheme()" class="theme-toggle-btn" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
+            <span class="theme-icon-container">
+              <i data-lucide="moon" class="w-4 h-4 text-slate-700 dark:text-amber-300"></i>
+            </span>
+          </button>
+          <button onclick="logoutHost()" class="liquid-btn-rose px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+            <span>Logout</span>
+          </button>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- Sub-Navbar Navigation Tabs -->
+    <div class="liquid-glass border-b border-white/60 dark:border-white/10">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-2 overflow-x-auto">
+        <button id="btnTabLogs" onclick="switchTab('logs')" class="px-4 py-3 text-sm font-bold text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400 transition-all flex items-center gap-2 shrink-0">
+          <i data-lucide="clipboard-list" class="w-4 h-4"></i>
+          <span>Attendance Ledger</span>
+        </button>
+        <button id="btnTabStudents" onclick="switchTab('students')" class="px-4 py-3 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 border-b-2 border-transparent transition-all flex items-center gap-2 shrink-0">
+          <i data-lucide="users" class="w-4 h-4"></i>
+          <span>Registered Students</span>
+        </button>
+        <button id="btnTabLecturers" onclick="switchTab('lecturers')" class="px-4 py-3 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 border-b-2 border-transparent transition-all flex items-center gap-2 shrink-0">
+          <i data-lucide="graduation-cap" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
+          <span>Faculty & Lecturers</span>
+        </button>
+        <button id="btnTabSettings" onclick="switchTab('settings')" class="px-4 py-3 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 border-b-2 border-transparent transition-all flex items-center gap-2 shrink-0">
+          <i data-lucide="settings" class="w-4 h-4"></i>
+          <span>Geofence & Anti-Proxy Settings</span>
+        </button>
+        <button id="btnTabLiveness" onclick="switchTab('liveness')" class="px-4 py-3 text-sm font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 border-b-2 border-transparent transition-all flex items-center gap-2 shrink-0">
+          <i data-lucide="brain-circuit" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
+          <span>Adaptive Liveness AI</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+      <!-- KPI Summary Cards -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        
+        <div class="liquid-glass p-5 rounded-2xl border border-white/70 dark:border-white/10 shadow-sm flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+            <i data-lucide="users" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Enrolled Students</div>
+            <div class="text-2xl font-black text-slate-900 dark:text-white mt-0.5" id="kpiTotalStudents">0</div>
+          </div>
+        </div>
+
+        <div class="liquid-glass p-5 rounded-2xl border border-white/70 dark:border-white/10 shadow-sm flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+            <i data-lucide="user-check" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Present Today</div>
+            <div class="text-2xl font-black text-slate-900 dark:text-white mt-0.5" id="kpiTodayPresent">0</div>
+          </div>
+        </div>
+
+        <div class="liquid-glass p-5 rounded-2xl border border-white/70 dark:border-white/10 shadow-sm flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+            <i data-lucide="shield-alert" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Proxy Suspects</div>
+            <div class="text-2xl font-black text-amber-600 dark:text-amber-400 mt-0.5" id="kpiProxyAlerts">0</div>
+          </div>
+        </div>
+
+        <div class="liquid-glass p-5 rounded-2xl border border-white/70 dark:border-white/10 shadow-sm flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+            <i data-lucide="pie-chart" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <div class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Turnout Rate</div>
+            <div class="text-2xl font-black text-slate-900 dark:text-white mt-0.5" id="kpiAttendanceRate">0%</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB 1: Attendance Ledger -->
+      <div id="logsTab" class="space-y-4">
+        
+        <!-- Filter Toolbar -->
+        <div class="liquid-glass p-4 rounded-2xl border border-white/70 dark:border-white/10 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+          
+          <div class="flex flex-wrap items-center gap-3 w-full md:w-auto">
+            <!-- Date Filter -->
+            <div class="flex items-center gap-2">
+              <label class="text-xs font-bold text-slate-600 dark:text-slate-300">Date:</label>
+              <input 
+                type="date" 
+                id="logDateFilter" 
+                class="px-3 py-1.5 text-xs font-medium rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 font-mono shadow-sm"
+              />
+            </div>
+
+            <!-- Status Filter -->
+            <div class="flex items-center gap-2">
+              <label class="text-xs font-bold text-slate-600 dark:text-slate-300">Status:</label>
+              <select id="logStatusFilter" class="px-3 py-1.5 text-xs font-medium rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-sm">
+                <option value="ALL">All Entries</option>
+                <option value="PRESENT">Present (Verified)</option>
+                <option value="PROXY">Proxy Flagged Only</option>
+                <option value="REJECTED">Biometric Rejected</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Search Input -->
+          <div class="w-full md:w-72 relative">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+              <i data-lucide="search" class="w-4 h-4"></i>
+            </div>
+            <input 
+              type="text" 
+              id="logSearchInput" 
+              placeholder="Search Roll No, Name, or IP..." 
+              class="w-full pl-9 pr-4 py-1.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-sm"
+            />
+          </div>
+
+        </div>
+
+        <!-- Attendance Data Table -->
+        <div class="liquid-glass rounded-3xl border border-white/70 dark:border-white/10 shadow-sm overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-white/50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-white/10 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <th class="py-3 px-4">Time</th>
+                  <th class="py-3 px-4">Student & OTP</th>
+                  <th class="py-3 px-4">Biometric Match</th>
+                  <th class="py-3 px-4">IP Address</th>
+                  <th class="py-3 px-4">Geolocation & Alt</th>
+                  <th class="py-3 px-4">Audit Status</th>
+                  <th class="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="attendanceTableBody" class="divide-y divide-slate-100 dark:divide-slate-800">
+                <!-- Injected via JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB 2: Registered Students Directory -->
+      <div id="studentsTab" class="hidden space-y-4">
+        <div class="liquid-glass rounded-3xl border border-white/70 dark:border-white/10 shadow-sm overflow-hidden">
+          <div class="p-5 border-b border-slate-200/60 dark:border-white/10 flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Enrolled Face ID Profiles</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Registered students with stored 128-D neural face descriptors</p>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-white/50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-white/10 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <th class="py-3 px-4">Avatar</th>
+                  <th class="py-3 px-4">Roll Number</th>
+                  <th class="py-3 px-4">Student Name</th>
+                  <th class="py-3 px-4">Department</th>
+                  <th class="py-3 px-4">Enrolled On</th>
+                  <th class="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="studentsTableBody" class="divide-y divide-slate-100 dark:divide-slate-800">
+                <!-- Injected via JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: Faculty & Lecturers (Host-Restricted) -->
+      <div id="lecturersTab" class="hidden space-y-6">
+        
+        <!-- Private Faculty Registration Card -->
+        <div class="liquid-glass rounded-3xl p-6 sm:p-8 border border-white/70 dark:border-white/10 shadow-xl">
+          <div class="border-b border-slate-200/60 dark:border-white/10 pb-4 mb-6 flex items-start justify-between">
+            <div>
+              <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 text-xs font-bold uppercase tracking-wider mb-2 border border-purple-200 dark:border-purple-800">
+                <i data-lucide="lock" class="w-3.5 h-3.5"></i> Host Confidential
+              </div>
+              <h3 class="text-lg font-black text-slate-900 dark:text-white">Private Faculty Registration</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Register faculty members who can log in to the Lecturer Portal to generate 5-minute attendance OTPs. Invisible to students.</p>
+            </div>
+          </div>
+
+          <form id="createLecturerForm" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+                  Faculty / Lecturer ID <span class="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  id="newLecturerId" 
+                  required 
+                  class="w-full px-3.5 py-2.5 text-xs font-mono font-bold uppercase rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
+                  placeholder="e.g. LEC-101"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+                  Faculty Legal Name <span class="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  id="newLecturerName" 
+                  required 
+                  class="w-full px-3.5 py-2.5 text-xs font-medium rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
+                  placeholder="e.g. Dr. Alan Turing"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+                  Email Address
+                </label>
+                <input 
+                  type="email" 
+                  id="newLecturerEmail" 
+                  class="w-full px-3.5 py-2.5 text-xs font-medium rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
+                  placeholder="e.g. turing@university.edu"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+                  Department
+                </label>
+                <input 
+                  type="text" 
+                  id="newLecturerDept" 
+                  value="Computer Science"
+                  class="w-full px-3.5 py-2.5 text-xs font-medium rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
+                  placeholder="e.g. Computer Science"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+                  Portal Password <span class="text-rose-500">*</span>
+                </label>
+                <input 
+                  type="password" 
+                  id="newLecturerPass" 
+                  required 
+                  class="w-full px-3.5 py-2.5 text-xs rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
+                  placeholder="••••••••"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1">
+                  Default Assigned Subject
+                </label>
+                <input 
+                  type="text" 
+                  id="newLecturerSubject" 
+                  value="Computer Vision & AI"
+                  class="w-full px-3.5 py-2.5 text-xs font-medium rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-600 shadow-sm"
+                  placeholder="e.g. Neural Networks"
+                />
+              </div>
+
+            </div>
+
+            <div id="lecturerFormAlert" class="hidden p-3 rounded-xl text-xs font-semibold"></div>
+
+            <div class="pt-2">
+              <button 
+                type="submit" 
+                class="px-6 py-2.5 rounded-xl liquid-btn-purple text-white font-bold text-xs uppercase tracking-wider flex items-center gap-1.5"
+              >
+                <i data-lucide="user-plus" class="w-4 h-4"></i>
+                <span>Register Faculty Member</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Registered Faculty Directory Table -->
+        <div class="liquid-glass rounded-3xl border border-white/70 dark:border-white/10 shadow-sm overflow-hidden">
+          <div class="p-5 border-b border-slate-200/60 dark:border-white/10 flex items-center justify-between">
+            <div>
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Registered Faculty Directory</h3>
+              <p class="text-xs text-slate-500 dark:text-slate-400">Authorized personnel who can launch 5-minute class sessions</p>
+            </div>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-white/50 dark:bg-slate-800/50 border-b border-slate-200/60 dark:border-white/10 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                  <th class="py-3 px-4">Faculty ID</th>
+                  <th class="py-3 px-4">Faculty Name</th>
+                  <th class="py-3 px-4">Department</th>
+                  <th class="py-3 px-4">Assigned Subject</th>
+                  <th class="py-3 px-4">Registered On</th>
+                  <th class="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="lecturersTableBody" class="divide-y divide-slate-100 dark:divide-slate-800">
+                <!-- Injected via JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- TAB 4: Geofence & Anti-Proxy Settings -->
+      <div id="settingsTab" class="hidden max-w-3xl mx-auto space-y-6">
+        <div class="liquid-glass p-6 sm:p-8 rounded-3xl border border-white/70 dark:border-white/10 shadow-xl">
+          
+          <div class="border-b border-slate-200/60 dark:border-white/10 pb-4 mb-6">
+            <h3 class="text-lg font-black text-slate-900 dark:text-white">Anti-Proxy & Biometric Security Settings</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">Configure campus GPS boundaries, multi-login thresholds, and face verification tolerance.</p>
+          </div>
+
+          <form id="settingsForm" class="space-y-6">
+            
+            <!-- Institution Name -->
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1.5">
+                Institution / Organization Name
+              </label>
+              <input 
+                type="text" 
+                id="setInstitutionName" 
+                class="w-full px-3.5 py-2 text-sm rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 shadow-sm"
+              />
+            </div>
+
+            <!-- Geofencing Toggle -->
+            <div class="flex items-center justify-between p-4 bg-white/60 dark:bg-slate-800/60 rounded-2xl border border-white/80 dark:border-white/10">
+              <div>
+                <span class="text-sm font-bold text-slate-900 dark:text-white block">Enforce Campus Geofencing</span>
+                <span class="text-xs text-slate-500 dark:text-slate-400">Requires students to be physically within the campus coordinates when marking attendance.</span>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="setGeofenceToggle" class="sr-only peer">
+                <div class="w-11 h-6 bg-gray-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+
+            <!-- Campus Coordinates -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Campus Center Latitude</label>
+                <input 
+                  type="text" 
+                  id="setCampusLat" 
+                  class="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  placeholder="12.971600"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Campus Center Longitude</label>
+                <input 
+                  type="text" 
+                  id="setCampusLon" 
+                  class="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  placeholder="77.594600"
+                />
+              </div>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <button type="button" onclick="detectHostCurrentLocation()" class="liquid-btn-glass px-3 py-1.5 rounded-xl text-xs text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1.5">
+                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i> Set to My Current GPS Coordinates
+              </button>
+            </div>
+
+            <!-- Geofence Radius -->
+            <div>
+              <div class="flex justify-between items-center mb-1">
+                <label class="text-xs font-bold text-slate-700 dark:text-slate-300">Geofence Radius (Meters)</label>
+                <span class="text-xs font-mono text-blue-600 dark:text-blue-400 font-bold" id="radiusValDisplay">500m</span>
+              </div>
+              <input 
+                type="range" 
+                id="setGeofenceRadius" 
+                min="50" 
+                max="5000" 
+                step="50"
+                class="w-full accent-blue-600"
+                oninput="document.getElementById('radiusValDisplay').textContent = this.value + 'm'"
+              />
+              <p class="text-[11px] text-slate-400 mt-1">Allowed boundary radius from campus center point.</p>
+            </div>
+
+            <!-- IP Clumping / Multi-login Threshold -->
+            <div>
+              <div class="flex justify-between items-center mb-1">
+                <label class="text-xs font-bold text-slate-700 dark:text-slate-300">Max Allowed Students per IP Address per Day</label>
+                <span class="text-xs font-mono text-amber-600 dark:text-amber-400 font-bold" id="ipLimitDisplay">2</span>
+              </div>
+              <input 
+                type="range" 
+                id="setMaxIpLimit" 
+                min="1" 
+                max="10" 
+                step="1"
+                class="w-full accent-amber-600"
+                oninput="document.getElementById('ipLimitDisplay').textContent = this.value"
+              />
+              <p class="text-[11px] text-slate-400 mt-1">Flags an alert if more than this number of distinct roll numbers check in from the same IP network on the same day.</p>
+            </div>
+
+            <!-- Face Match Strictness Threshold -->
+            <div>
+              <div class="flex justify-between items-center mb-1">
+                <label class="text-xs font-bold text-slate-700 dark:text-slate-300">Face Recognition Distance Threshold</label>
+                <span class="text-xs font-mono text-blue-600 dark:text-blue-400 font-bold" id="threshValDisplay">0.45</span>
+              </div>
+              <input 
+                type="range" 
+                id="setMatchThreshold" 
+                min="0.30" 
+                max="0.55" 
+                step="0.01"
+                class="w-full accent-blue-600"
+                oninput="document.getElementById('threshValDisplay').textContent = this.value"
+              />
+              <p class="text-[11px] text-slate-400 mt-1">Lower = More strict (0.40 - 0.45 recommended for high accuracy).</p>
+            </div>
+
+            <!-- Host PIN -->
+            <div>
+              <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Host Admin PIN</label>
+              <input 
+                type="text" 
+                id="setAdminPin" 
+                class="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+              />
+            </div>
+
+            <button type="submit" class="w-full py-3.5 rounded-xl liquid-btn-primary font-bold text-xs uppercase tracking-wider shadow-md transition-all">
+              Save Security Settings
+            </button>
+
+            <!-- Success Toast -->
+            <div id="settingsToast" class="hidden p-3 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs text-center font-bold">
+              ✅ Settings updated successfully!
+            </div>
+
+          </form>
+
+        </div>
+      </div>
+
+      <!-- VIEW 5: ADAPTIVE LIVENESS AI TRAINING & OBSERVATIONS -->
+      <div id="livenessTab" class="hidden space-y-6">
+
+        <!-- Calibration Command Card -->
+        <div class="liquid-glass p-6 sm:p-8 rounded-3xl border border-white/70 dark:border-white/10 shadow-lg">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200/60 dark:border-white/10 pb-6 mb-6">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <h3 class="text-xl font-black text-slate-900 dark:text-white">Everyday Liveness Adaptive Learning Engine</h3>
+              </div>
+              <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                Observes verified student attendances daily, learning personalized ocular distributions (mean EAR, blink duration, micro-textures, and screen reflection baselines) to prevent false rejections and harden anti-spoofing against digital screen replays.
+              </p>
+            </div>
+            <button 
+              id="btnTrainLiveness" 
+              onclick="triggerLivenessTraining()" 
+              class="liquid-btn-emerald py-3.5 px-6 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shrink-0"
+            >
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
+              <span>Recalibrate & Train Model</span>
+            </button>
+          </div>
+
+          <!-- Real-Time Learned Metrics Grid -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="p-4 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10">
+              <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Observed Telemetry Samples</span>
+              <span class="text-2xl font-black text-slate-900 dark:text-white mt-1 block" id="livenessTotalSamples">--</span>
+            </div>
+            <div class="p-4 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10">
+              <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Personalized Profiles</span>
+              <span class="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1 block" id="livenessTotalProfiles">--</span>
+            </div>
+            <div class="p-4 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10">
+              <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Global Learned Threshold</span>
+              <span class="text-2xl font-black text-blue-600 dark:text-blue-400 mt-1 block font-mono" id="livenessGlobalThresh">--</span>
+            </div>
+            <div class="p-4 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10">
+              <span class="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">Last Training Timestamp</span>
+              <span class="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-2 block font-mono truncate" id="livenessLastTrained">--</span>
+            </div>
+          </div>
+
+          <div id="trainLivenessToast" class="hidden mt-4 p-3 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs text-center font-bold"></div>
+        </div>
+
+        <!-- Student Learned Profiles Table -->
+        <div class="liquid-glass rounded-3xl border border-white/70 dark:border-white/10 shadow-lg overflow-hidden">
+          <div class="p-5 border-b border-slate-200/60 dark:border-white/10 flex items-center justify-between">
+            <h4 class="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <i data-lucide="eye" class="w-4 h-4 text-emerald-600"></i>
+              Personalized Student Liveness Baselines
+            </h4>
+            <span class="text-xs text-slate-400 font-mono" id="livenessProfilesCount">0 Students Trained</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="border-b border-slate-200/60 dark:border-white/10 bg-slate-50/50 dark:bg-slate-900/50 text-slate-500 dark:text-slate-400 font-bold uppercase tracking-wider">
+                  <th class="p-3.5">Student</th>
+                  <th class="p-3.5">Telemetry Samples</th>
+                  <th class="p-3.5">Mean Resting EAR</th>
+                  <th class="p-3.5">Adaptive Blink Threshold</th>
+                  <th class="p-3.5">Texture Variance</th>
+                  <th class="p-3.5">Specular Reflection</th>
+                  <th class="p-3.5">Last Calibrated</th>
+                </tr>
+              </thead>
+              <tbody id="livenessProfilesTableBody" class="divide-y divide-slate-100 dark:divide-white/5 text-slate-700 dark:text-slate-300">
+                <tr>
+                  <td colspan="7" class="p-8 text-center text-slate-400">Loading learned profiles...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+    </main>
+
+  </div>
+
+  <!-- Side-by-side Biometric Audit & Inspection Modal -->
+  <div id="inspectionModal" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/75 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="liquid-glass rounded-3xl max-w-2xl w-full shadow-2xl border border-white/70 dark:border-white/20 overflow-hidden transform transition-all">
+      
+      <!-- Modal Header -->
+      <div class="bg-slate-900 dark:bg-slate-950 text-white px-6 py-4 flex items-center justify-between border-b border-white/10">
+        <div>
+          <h3 class="text-base font-bold flex items-center gap-2">
+            <i data-lucide="scan" class="w-5 h-5 text-blue-400"></i>
+            Biometric Inspection & Anti-Proxy Audit
+          </h3>
+          <p class="text-xs text-slate-400 mt-0.5">Physical Side-by-Side Face Verification</p>
+        </div>
+        <button onclick="closeInspectionModal()" class="text-slate-400 hover:text-white font-bold text-lg">✕</button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+        
+        <!-- Proxy Flags Alert Banner -->
+        <div id="inspProxyFlagsBox" class="hidden p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-2xl text-xs text-amber-900 dark:text-amber-200">
+          <div class="font-bold flex items-center gap-1.5 text-amber-800 dark:text-amber-300 text-sm mb-1">
+            <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-600"></i>
+            Anti-Proxy Security Anomaly Flagged
+          </div>
+          <p id="inspProxyFlagsText" class="leading-relaxed"></p>
+        </div>
+
+        <!-- Student Basic Profile -->
+        <div class="flex items-center justify-between p-3.5 bg-white/60 dark:bg-slate-800/60 rounded-2xl border border-white/80 dark:border-white/10">
+          <div>
+            <h4 id="inspStudentName" class="text-base font-bold text-slate-900 dark:text-white"></h4>
+            <span id="inspRollNo" class="font-mono text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-950/60 px-2 py-0.5 rounded"></span>
+          </div>
+          <div class="text-right text-xs text-slate-500 dark:text-slate-400 font-mono" id="inspTime"></div>
+        </div>
+
+        <!-- Visual Side-by-Side Photo Comparison -->
+        <div>
+          <h5 class="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">Biometric Image Comparison</h5>
+          <div class="grid grid-cols-2 gap-4">
+            
+            <div class="p-3 bg-white/60 dark:bg-slate-800/60 rounded-2xl border border-white/80 dark:border-white/10 text-center">
+              <span class="text-[11px] font-bold text-slate-600 dark:text-slate-300 block mb-2 uppercase">1. Enrolled Biometric Avatar</span>
+              <img id="inspAvatarImg" class="w-full h-44 object-cover rounded-xl border border-slate-300 dark:border-slate-700 shadow-inner" src="" alt="Enrolled" />
+            </div>
+
+            <div class="p-3 bg-white/60 dark:bg-slate-800/60 rounded-2xl border border-white/80 dark:border-white/10 text-center">
+              <span class="text-[11px] font-bold text-slate-600 dark:text-slate-300 block mb-2 uppercase">2. Live Login Snapshot</span>
+              <img id="inspSnapshotImg" class="w-full h-44 object-cover rounded-xl border border-slate-300 dark:border-slate-700 shadow-inner" src="" alt="Snapshot" />
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Metric Details -->
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div class="p-3 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10">
+            <span class="text-slate-500 dark:text-slate-400 block">Biometric Match Confidence:</span>
+            <span id="inspConfidence" class="text-lg font-bold text-emerald-600 dark:text-emerald-400"></span>
+          </div>
+          <div class="p-3 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10">
+            <span class="text-slate-500 dark:text-slate-400 block">Euclidean Vector Distance:</span>
+            <span id="inspDistance" class="text-lg font-bold text-slate-800 dark:text-white font-mono"></span>
+          </div>
+          <div class="p-3 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10">
+            <span class="text-slate-500 dark:text-slate-400 block">Liveness Reality Check:</span>
+            <span id="inspLiveness" class="text-sm font-bold text-emerald-600 dark:text-emerald-400"></span>
+          </div>
+          <div class="p-3 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10">
+            <span class="text-slate-500 dark:text-slate-400 block">Client IP Address:</span>
+            <span id="inspIP" class="font-mono font-semibold text-slate-800 dark:text-white"></span>
+          </div>
+          <div class="col-span-2 p-3 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10">
+            <span class="text-slate-500 dark:text-slate-400 block">Verified GPS Coordinates, Address & Altitude:</span>
+            <span id="inspLocationAddress" class="text-xs font-semibold text-slate-800 dark:text-white"></span>
+          </div>
+        </div>
+
+        <!-- Host Audit Notes -->
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Host Audit Notes / Justification</label>
+          <input 
+            type="text" 
+            id="inspAdminNotes" 
+            class="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600"
+            placeholder="e.g. Verified by host visually, network anomaly resolved."
+          />
+        </div>
+
+      </div>
+
+      <!-- Host Action Buttons -->
+      <div class="px-6 py-4 bg-white/70 dark:bg-slate-800/80 border-t border-white/80 dark:border-white/10 flex items-center justify-between">
+        <button onclick="updateInspectionStatus('REJECTED')" class="liquid-btn-rose px-4 py-2 text-xs font-bold">
+          Mark as Rejected / Revoke
+        </button>
+        <div class="flex items-center gap-2">
+          <button onclick="closeInspectionModal()" class="liquid-btn-glass px-4 py-2 text-xs font-semibold">
+            Cancel
+          </button>
+          <button onclick="updateInspectionStatus('PRESENT')" class="liquid-btn-emerald px-5 py-2 text-xs font-bold">
+            Approve & Clear Flags
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Lucide icons trigger -->
+  <script>
+    document.addEventListener("DOMContentLoaded", () => {
+      if (window.lucide) lucide.createIcons();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,770 @@
+/* =========================================================================
+   VERIFACE LIQUID GLASS DESIGN SYSTEM & DYNAMIC INTERACTION ENGINE
+   ========================================================================= */
+
+:root {
+  --primary: #3b82f6;
+  --primary-rgb: 59, 130, 246;
+  --emerald-rgb: 16, 185, 129;
+  --purple-rgb: 139, 92, 246;
+  --amber-rgb: 245, 158, 11;
+  --rose-rgb: 244, 63, 94;
+
+  /* Light Mode Palette: Minimalist Pure White */
+  --bg-base: #ffffff;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --card-bg: rgba(255, 255, 255, 0.92);
+  --card-border: rgba(226, 232, 240, 0.85);
+  --card-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.02), inset 0 1px 1px 0 rgba(255, 255, 255, 1);
+  
+  --input-bg: #f8fafc;
+  --input-border: #cbd5e1;
+  --input-text: #0f172a;
+  
+  --nav-bg: rgba(255, 255, 255, 0.92);
+  --nav-border: rgba(226, 232, 240, 0.8);
+}
+
+/* =========================================================================
+   STABLE DARK MODE VARIABLES & OVERRIDES: Minimalist Pure Black
+   ========================================================================= */
+html.dark {
+  --bg-base: #000000;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --card-bg: rgba(18, 18, 22, 0.85);
+  --card-border: rgba(255, 255, 255, 0.1);
+  --card-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.85), inset 0 1px 1px 0 rgba(255, 255, 255, 0.15);
+  
+  --input-bg: rgba(28, 28, 34, 0.9);
+  --input-border: rgba(255, 255, 255, 0.12);
+  --input-text: #f8fafc;
+  
+  --nav-bg: rgba(10, 10, 12, 0.92);
+  --nav-border: rgba(255, 255, 255, 0.1);
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+  transition: background-color 0.35s cubic-bezier(0.16, 1, 0.3, 1), color 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* -------------------------------------------------------------
+   1. CLEAN MONOCHROME BACKGROUND (Strictly White or Black)
+   ------------------------------------------------------------- */
+.liquid-bg-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  display: none; /* No multiple colors in the background - pure white or black */
+}
+
+.liquid-orb {
+  display: none !important;
+}
+
+/* -------------------------------------------------------------
+   2. FROSTED LIQUID GLASS PANELS & CARDS
+   ------------------------------------------------------------- */
+.liquid-glass {
+  background: var(--card-bg);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: 1.5rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.liquid-glass:hover {
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.12), inset 0 1px 2px 0 rgba(255, 255, 255, 1);
+}
+
+html.dark .liquid-glass:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.75), inset 0 1px 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.liquid-glass-dark {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.45), inset 0 1px 1px 0 rgba(255, 255, 255, 0.25);
+  border-radius: 1.5rem;
+  color: #f8fafc;
+}
+
+header.liquid-glass {
+  background: var(--nav-bg);
+  border-bottom: 1px solid var(--nav-border);
+  border-radius: 0;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* -------------------------------------------------------------
+   3. LIQUID GLASS BUTTONS WITH DEPTH, DYNAMIC GLOW & LIGHT SHADOW
+   ------------------------------------------------------------- */
+
+/* Base Liquid Button Structure */
+.liquid-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  border-radius: 0.875rem;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              background 0.25s ease,
+              border-color 0.25s ease,
+              color 0.2s ease;
+  will-change: transform, box-shadow;
+}
+
+/* Specular Light Sweep Reflection (Animated Sheen) */
+.liquid-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 100%);
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.liquid-btn::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 80%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.liquid-btn:hover::after,
+.liquid-btn:active::after {
+  left: 140%;
+}
+
+/* Active / Touching Depth Compression */
+.liquid-btn:active {
+  transform: translateY(1.5px) scale(0.985) !important;
+}
+
+/* 3.1 PRIMARY BLUE LIQUID GLASS BUTTON */
+.liquid-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  border-radius: 0.875rem;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.95) 0%, rgba(37, 99, 235, 0.92) 50%, rgba(29, 78, 216, 0.95) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  /* 3D Depth + Light Ambient Shadow */
+  box-shadow: 
+    0 10px 25px -4px rgba(37, 99, 235, 0.38),
+    0 4px 10px -2px rgba(37, 99, 235, 0.22),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -2.5px 5px 0 rgba(0, 0, 0, 0.2);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.liquid-btn-primary::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 48%;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+  pointer-events: none;
+}
+
+.liquid-btn-primary::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 80%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transform: skewX(-20deg);
+  transition: left 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+.liquid-btn-primary:hover::after,
+.liquid-btn-primary:active::after {
+  left: 140%;
+}
+
+/* Hover: Dynamic Blue Bloom Glow & Elevation */
+.liquid-btn-primary:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.98) 0%, rgba(59, 130, 246, 0.96) 50%, rgba(37, 99, 235, 0.98) 100%);
+  border-color: rgba(255, 255, 255, 0.7);
+  box-shadow: 
+    0 0 28px 4px rgba(59, 130, 246, 0.55),
+    0 16px 36px -4px rgba(37, 99, 235, 0.5),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -2px 4px 0 rgba(0, 0, 0, 0.18);
+}
+
+/* Touch / Active: Intense Contact Depth & Pulse */
+.liquid-btn-primary:active {
+  transform: translateY(1.5px) scale(0.985);
+  box-shadow: 
+    0 0 35px 8px rgba(59, 130, 246, 0.75),
+    0 4px 14px rgba(29, 78, 216, 0.5),
+    inset 0 2px 5px rgba(0, 0, 0, 0.28),
+    inset 0 -1px 2px rgba(255, 255, 255, 0.5);
+}
+
+/* 3.2 EMERALD / SUCCESS LIQUID GLASS BUTTON */
+.liquid-btn-emerald {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  border-radius: 0.875rem;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.95) 0%, rgba(5, 150, 105, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 
+    0 10px 25px -4px rgba(16, 185, 129, 0.38),
+    0 4px 10px -2px rgba(16, 185, 129, 0.2),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -2.5px 5px 0 rgba(0, 0, 0, 0.2);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.liquid-btn-emerald:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.98) 0%, rgba(16, 185, 129, 0.96) 100%);
+  box-shadow: 
+    0 0 28px 4px rgba(16, 185, 129, 0.55),
+    0 16px 36px -4px rgba(5, 150, 105, 0.48),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -2px 4px 0 rgba(0, 0, 0, 0.18);
+}
+
+.liquid-btn-emerald:active {
+  transform: translateY(1.5px) scale(0.985);
+  box-shadow: 
+    0 0 35px 8px rgba(16, 185, 129, 0.75),
+    0 4px 14px rgba(5, 150, 105, 0.5),
+    inset 0 2px 5px rgba(0, 0, 0, 0.28);
+}
+
+/* 3.3 PURPLE / FACULTY LIQUID GLASS BUTTON */
+.liquid-btn-purple {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  border-radius: 0.875rem;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(147, 51, 234, 0.95) 0%, rgba(126, 34, 206, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 
+    0 10px 25px -4px rgba(147, 51, 234, 0.38),
+    0 4px 10px -2px rgba(147, 51, 234, 0.2),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -2.5px 5px 0 rgba(0, 0, 0, 0.2);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.liquid-btn-purple:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.98) 0%, rgba(147, 51, 234, 0.96) 100%);
+  box-shadow: 
+    0 0 28px 4px rgba(147, 51, 234, 0.55),
+    0 16px 36px -4px rgba(126, 34, 206, 0.48),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -2px 4px 0 rgba(0, 0, 0, 0.18);
+}
+
+.liquid-btn-purple:active {
+  transform: translateY(1.5px) scale(0.985);
+  box-shadow: 
+    0 0 35px 8px rgba(147, 51, 234, 0.75),
+    0 4px 14px rgba(126, 34, 206, 0.5),
+    inset 0 2px 5px rgba(0, 0, 0, 0.28);
+}
+
+/* 3.4 ROSE / DANGER LIQUID GLASS BUTTON */
+.liquid-btn-rose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  border-radius: 0.875rem;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(244, 63, 94, 0.95) 0%, rgba(225, 29, 72, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 
+    0 10px 25px -4px rgba(244, 63, 94, 0.38),
+    0 4px 10px -2px rgba(244, 63, 94, 0.2),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -2.5px 5px 0 rgba(0, 0, 0, 0.2);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.liquid-btn-rose:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, rgba(251, 113, 133, 0.98) 0%, rgba(244, 63, 94, 0.96) 100%);
+  box-shadow: 
+    0 0 28px 4px rgba(244, 63, 94, 0.55),
+    0 16px 36px -4px rgba(225, 29, 72, 0.48),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -2px 4px 0 rgba(0, 0, 0, 0.18);
+}
+
+.liquid-btn-rose:active {
+  transform: translateY(1.5px) scale(0.985);
+  box-shadow: 
+    0 0 35px 8px rgba(244, 63, 94, 0.75),
+    0 4px 14px rgba(225, 29, 72, 0.5),
+    inset 0 2px 5px rgba(0, 0, 0, 0.28);
+}
+
+/* 3.4.1 AMBER / WARNING LIQUID GLASS BUTTON */
+.liquid-btn-amber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  border-radius: 0.875rem;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.95) 0%, rgba(217, 119, 6, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 
+    0 10px 25px -4px rgba(245, 158, 11, 0.38),
+    0 4px 10px -2px rgba(245, 158, 11, 0.2),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -2.5px 5px 0 rgba(0, 0, 0, 0.2);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.liquid-btn-amber:hover {
+  transform: translateY(-2px);
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.98) 0%, rgba(245, 158, 11, 0.96) 100%);
+  box-shadow: 
+    0 0 28px 4px rgba(245, 158, 11, 0.55),
+    0 16px 36px -4px rgba(217, 119, 6, 0.48),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.8),
+    inset 0 -2px 4px 0 rgba(0, 0, 0, 0.18);
+}
+
+.liquid-btn-amber:active {
+  transform: translateY(1.5px) scale(0.985);
+  box-shadow: 
+    0 0 35px 8px rgba(245, 158, 11, 0.75),
+    0 4px 14px rgba(217, 119, 6, 0.5),
+    inset 0 2px 5px rgba(0, 0, 0, 0.28);
+}
+
+/* 3.5 CLEAR FROSTED LIQUID GLASS BUTTON (Secondary, Nav, Pill Actions) */
+.liquid-btn-glass {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  border-radius: 0.875rem;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 
+    0 8px 20px -4px rgba(15, 23, 42, 0.08),
+    0 2px 6px -1px rgba(15, 23, 42, 0.04),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -2px 4px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html.dark .liquid-btn-glass {
+  color: #f8fafc;
+  background: rgba(30, 41, 59, 0.6);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 
+    0 8px 20px -4px rgba(0, 0, 0, 0.4),
+    0 2px 6px -1px rgba(0, 0, 0, 0.2),
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -2px 4px 0 rgba(0, 0, 0, 0.3);
+}
+
+.liquid-btn-glass:hover {
+  transform: translateY(-1.5px);
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.95);
+  box-shadow: 
+    0 0 22px 3px rgba(255, 255, 255, 0.6),
+    0 12px 28px -4px rgba(15, 23, 42, 0.12),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 1);
+}
+
+html.dark .liquid-btn-glass:hover {
+  background: rgba(51, 65, 85, 0.75);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 0 25px 3px rgba(56, 189, 248, 0.35),
+    0 12px 28px -4px rgba(0, 0, 0, 0.6),
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.4);
+}
+
+.liquid-btn-glass:active {
+  transform: translateY(1.5px) scale(0.985);
+  box-shadow: 
+    0 0 20px 4px rgba(59, 130, 246, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.1),
+    inset 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* 3.6 THEME TOGGLE FROSTED BUTTON */
+.theme-toggle-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 
+    0 6px 16px -2px rgba(15, 23, 42, 0.08),
+    inset 0 1.5px 1.5px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -2px 3px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+html.dark .theme-toggle-btn {
+  background: rgba(30, 41, 59, 0.65);
+  border-color: rgba(255, 255, 255, 0.16);
+  box-shadow: 
+    0 6px 16px -2px rgba(0, 0, 0, 0.4),
+    inset 0 1px 1.5px 0 rgba(255, 255, 255, 0.25),
+    inset 0 -2px 3px 0 rgba(0, 0, 0, 0.3);
+}
+
+.theme-toggle-btn:hover {
+  transform: translateY(-1.5px) rotate(8deg);
+  box-shadow: 
+    0 0 20px 3px rgba(245, 158, 11, 0.45),
+    0 10px 24px -4px rgba(15, 23, 42, 0.12),
+    inset 0 1.5px 2px 0 rgba(255, 255, 255, 1);
+}
+
+html.dark .theme-toggle-btn:hover {
+  box-shadow: 
+    0 0 22px 4px rgba(251, 191, 36, 0.45),
+    0 10px 24px -4px rgba(0, 0, 0, 0.5),
+    inset 0 1px 2px 0 rgba(255, 255, 255, 0.4);
+}
+
+.theme-toggle-btn:active {
+  transform: translateY(1.5px) scale(0.95);
+}
+
+/* -------------------------------------------------------------
+   4. DARK MODE FORM CONTROLS & TABLES
+   ------------------------------------------------------------- */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: var(--input-bg) !important;
+  border-color: var(--input-border) !important;
+  color: var(--input-text) !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25), 0 0 20px rgba(56, 189, 248, 0.2) !important;
+}
+
+/* Dark mode text corrections */
+html.dark .text-slate-900 {
+  color: #f8fafc !important;
+}
+html.dark .text-slate-800 {
+  color: #f1f5f9 !important;
+}
+html.dark .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+html.dark .text-slate-600 {
+  color: #cbd5e1 !important;
+}
+html.dark .text-slate-500 {
+  color: #94a3b8 !important;
+}
+
+/* Dark mode borders */
+html.dark .border-slate-200,
+html.dark .border-slate-100 {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Dark mode subtle containers */
+html.dark .bg-slate-50,
+html.dark .bg-white\/50,
+html.dark .bg-white\/60,
+html.dark .bg-white\/70,
+html.dark .bg-white\/80 {
+  background-color: rgba(30, 41, 59, 0.5) !important;
+}
+
+html.dark .bg-white {
+  background-color: rgba(15, 23, 42, 0.8) !important;
+}
+
+/* Tables in Dark Mode */
+html.dark table thead tr {
+  background-color: rgba(30, 41, 59, 0.6) !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark table tbody tr {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* -------------------------------------------------------------
+   5. BIOMETRIC SCANNER HUD VIEWPORT
+   ------------------------------------------------------------- */
+.scanner-viewport-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.5rem;
+  background: #020617;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 1px 2px 0 rgba(255, 255, 255, 0.3);
+}
+
+.scanner-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.scanner-canvas-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  transform: scaleX(-1);
+}
+
+/* Cyber Scanning Reticle Frame */
+.scanner-hud-reticle {
+  position: absolute;
+  inset: 12%;
+  border-radius: 1.25rem;
+  border: 2px dashed rgba(56, 189, 248, 0.45);
+  pointer-events: none;
+  transition: all 0.3s ease;
+  z-index: 20;
+}
+
+.scanner-hud-reticle.aligned {
+  border-color: rgba(52, 211, 153, 0.9);
+  box-shadow: 0 0 35px rgba(16, 185, 129, 0.4) inset, 0 0 20px rgba(16, 185, 129, 0.35);
+}
+
+.scanner-hud-reticle.error {
+  border-color: rgba(248, 113, 113, 0.9);
+  box-shadow: 0 0 35px rgba(239, 68, 68, 0.4) inset;
+}
+
+/* Corner Bracket Accents */
+.corner-bracket {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-color: #38bdf8;
+  border-style: solid;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.reticle-tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-top-left-radius: 8px; }
+.reticle-tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-top-right-radius: 8px; }
+.reticle-bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-bottom-left-radius: 8px; }
+.reticle-br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-bottom-right-radius: 8px; }
+
+.scanner-hud-reticle.aligned .corner-bracket {
+  border-color: #34d399;
+}
+
+.scanner-hud-reticle.error .corner-bracket {
+  border-color: #f87171;
+}
+
+/* Fluid Laser Beam */
+.scanner-laser-beam {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent 0%, rgba(56, 189, 248, 0.95) 50%, transparent 100%);
+  box-shadow: 0 0 16px #38bdf8;
+  opacity: 0.85;
+  animation: scanLaser 2.2s infinite ease-in-out;
+  pointer-events: none;
+  z-index: 22;
+}
+
+.scanner-hud-reticle.aligned .scanner-laser-beam {
+  background: linear-gradient(90deg, transparent 0%, rgba(52, 211, 153, 0.95) 50%, transparent 100%);
+  box-shadow: 0 0 18px #34d399;
+}
+
+@keyframes scanLaser {
+  0% { top: 6%; opacity: 0.3; }
+  50% { top: 92%; opacity: 0.95; }
+  100% { top: 6%; opacity: 0.3; }
+}
+
+/* Face Oval Guidance Mask */
+.face-oval-guide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 220px;
+  height: 290px;
+  border-radius: 50% 50% 48% 48% / 60% 60% 40% 40%;
+  border: 2px dashed rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+  z-index: 15;
+  transition: all 0.3s ease;
+}
+
+.face-oval-guide.aligned {
+  border-color: rgba(52, 211, 153, 0.85);
+  border-style: solid;
+  box-shadow: 0 0 25px rgba(52, 211, 153, 0.45);
+}
+
+/* -------------------------------------------------------------
+   6. OTP BILLBOARD & DIGITAL BADGES
+   ------------------------------------------------------------- */
+.otp-digit-billboard {
+  letter-spacing: 0.25em;
+  font-family: 'JetBrains Mono', monospace, ui-monospace;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 15px 35px -8px rgba(0, 0, 0, 0.35), inset 0 1px 2px 0 rgba(255, 255, 255, 0.3);
+  border-radius: 1.25rem;
+  color: #38bdf8;
+  text-shadow: 0 0 15px rgba(56, 189, 248, 0.5);
+  transition: all 0.3s ease;
+}
+
+.otp-digit-billboard:hover {
+  box-shadow: 0 0 35px rgba(56, 189, 248, 0.4), inset 0 1px 2px 0 rgba(255, 255, 255, 0.5);
+  transform: scale(1.02);
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(241, 245, 249, 0.6);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(203, 213, 225, 0.8);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.8);
+}
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.8);
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}

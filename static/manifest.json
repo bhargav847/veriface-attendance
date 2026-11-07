@@ -1,0 +1,61 @@
+{
+  "name": "VeriFace: Biometric Attendance & Anti-Proxy Shield",
+  "short_name": "VeriFace",
+  "description": "Enterprise-grade digital biometric attendance system with real-time liveness verification, ephemeral OTP gating, and GPS anti-proxy protection.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#0f172a",
+  "categories": ["education", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Student Check-in",
+      "short_name": "Check-in",
+      "description": "Scan face and submit attendance",
+      "url": "/",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Register Face ID",
+      "short_name": "Enroll",
+      "description": "Enroll biometric Face ID profile",
+      "url": "/register",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Lecturer Portal",
+      "short_name": "Lecturer",
+      "description": "Create 5-minute class session OTP",
+      "url": "/lecturer",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Host Console",
+      "short_name": "Host",
+      "description": "Administrative control center",
+      "url": "/host",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
