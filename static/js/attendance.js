@@ -118,6 +118,20 @@ document.addEventListener("DOMContentLoaded", async () => {
   scanBtn.addEventListener("click", () => {
     executeAttendanceVerification();
   });
+
+  // Offline queue event listeners (Fix 6: weak campus Wi-Fi)
+  window.addEventListener("online", flushOfflineCheckinQueue);
+  setInterval(flushOfflineCheckinQueue, 5000);
+  updateOfflineBanner();
+
+  // Plain Browser Mode (Zero Cache) check (Fix 7: iOS Safari quirks)
+  if (window.location.search.includes("mode=plain") || sessionStorage.getItem("plain_mode") === "true") {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        for (let reg of registrations) reg.unregister();
+      });
+    }
+  }
 });
 
 // TensorFlow.js Backend Detection
@@ -266,10 +280,11 @@ async function fetchHumanReadableAddress(lat, lon) {
 // -------------------------------------------------------------
 async function startCamera() {
   try {
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     stream = await navigator.mediaDevices.getUserMedia({
       video: {
-        width: { ideal: 640 },
-        height: { ideal: 480 },
+        width: { ideal: isMobile ? 640 : 1280 },
+        height: { ideal: isMobile ? 480 : 720 },
         facingMode: "user"
       },
       audio: false
@@ -287,6 +302,12 @@ async function startCamera() {
   } catch (err) {
     console.error("Camera access failed:", err);
     updateScannerStatus("Camera permission denied. Please allow camera permissions.", "error");
+    // Show iOS Safari guidance banner if on iPhone / iPad
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (isIOS) {
+      const safariBanner = document.getElementById("safariHelpBanner");
+      if (safariBanner) safariBanner.classList.remove("hidden");
+    }
   }
 }
 
@@ -312,17 +333,78 @@ function calculateEyeAspectRatio(eyePoints) {
   return (v1 + v2) / (2.0 * h);
 }
 
+// Real-Time Illumination & Lighting Evaluation (Fix 4: Low light & camera hints)
+let lightSampleCanvas = null;
+function evaluateLightingConditions() {
+  if (!videoElement || videoElement.videoWidth === 0) return;
+  try {
+    if (!lightSampleCanvas) {
+      lightSampleCanvas = document.createElement("canvas");
+      lightSampleCanvas.width = 40;
+      lightSampleCanvas.height = 30;
+    }
+    const lCtx = lightSampleCanvas.getContext("2d");
+    lCtx.drawImage(videoElement, 0, 0, 40, 30);
+    const imgData = lCtx.getImageData(0, 0, 40, 30).data;
+    let totalLuma = 0;
+    const pixelCount = imgData.length / 4;
+    for (let i = 0; i < imgData.length; i += 4) {
+      totalLuma += 0.299 * imgData[i] + 0.587 * imgData[i + 1] + 0.114 * imgData[i + 2];
+    }
+    const avgLuma = totalLuma / pixelCount;
+    updateLightingTipBadge(avgLuma);
+  } catch (e) {}
+}
+
+function updateLightingTipBadge(avgLuma) {
+  const hud = document.getElementById("lightingHUD");
+  const text = document.getElementById("lightingText");
+  const icon = document.getElementById("lightingIcon");
+  if (!hud || !text) return;
+
+  if (avgLuma < 48) {
+    hud.className = "pointer-events-auto inline-flex items-center px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-slate-900/90 backdrop-blur-md text-amber-300 border border-amber-500/50 shadow-md";
+    if (icon) icon.textContent = "🌙";
+    text.textContent = "Too Dim: Turn to light";
+  } else if (avgLuma > 225) {
+    hud.className = "pointer-events-auto inline-flex items-center px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-slate-900/90 backdrop-blur-md text-amber-300 border border-amber-500/50 shadow-md";
+    if (icon) icon.textContent = "☀️";
+    text.textContent = "Too Bright: Backlit";
+  } else {
+    hud.className = "pointer-events-auto inline-flex items-center px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-slate-900/90 backdrop-blur-md text-emerald-300 border border-emerald-500/40 shadow-md";
+    if (icon) icon.textContent = "💡";
+    text.textContent = "Lighting: Good";
+  }
+}
+
 // -------------------------------------------------------------
 // 4. REAL-TIME FACE TRACKING & DYNAMIC BLINK LIVENESS LOOP
 // -------------------------------------------------------------
+let loopFrameCounter = 0;
 async function startFaceTrackingLoop() {
   const reticle = document.getElementById("hudReticle");
   const ovalGuide = document.getElementById("faceOvalGuide");
   const ctx = canvasOverlay.getContext("2d");
-  const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.50 });
+  
+  // Low-end phone optimization (Fix 4): use 160px tensor on mobile for 3x speedup
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const detectorOptions = new faceapi.TinyFaceDetectorOptions({ 
+    inputSize: isMobile ? 160 : 224, 
+    scoreThreshold: 0.38 
+  });
 
   async function loop() {
     if (!isScanning || !videoElement || videoElement.paused || videoElement.ended) {
+      requestAnimationFrame(loop);
+      return;
+    }
+
+    loopFrameCounter++;
+    if (loopFrameCounter % 15 === 0) {
+      evaluateLightingConditions();
+    }
+
+    const frameStartTime = performance.now();
       requestAnimationFrame(loop);
       return;
     }
@@ -508,8 +590,11 @@ async function executeAttendanceVerification() {
   }
 
   // --- ANTI-SPOOFING LIVENESS GATE ---
-  // If user has not blinked yet within this active session:
-  if (!livenessVerified) {
+  // Ensure the eye blink was recent (within the last 8 seconds) to prevent stale blinks from prior attempts
+  const isRecentBlink = livenessVerified && (Date.now() - lastBlinkTimestamp < 8000);
+
+  if (!isRecentBlink) {
+    livenessVerified = false;
     playAudioTone('warning');
     waitingForBlinkToScan = true;
     scanBtn.disabled = true;
@@ -538,11 +623,24 @@ async function executeAttendanceVerification() {
 
   try {
     // 1. High precision face bounding box + 128-d descriptor extraction
-    // SSD MobileNet V1 detects face bounding box; ResNet-34 extracts 128-point descriptor
-    const detection = await faceapi
-      .detectSingleFace(videoElement, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.65 }))
-      .withFaceLandmarks()
-      .withFaceDescriptor();
+    // Attempt SSD MobileNet V1 first; if low-end phone struggles, fallback to TinyFaceDetector
+    let detection = null;
+    try {
+      detection = await faceapi
+        .detectSingleFace(videoElement, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.55 }))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+    } catch (e) {
+      console.warn("SSD MobileNet failed; falling back to TinyFaceDetector...", e);
+    }
+
+    if (!detection) {
+      // Fast fallback for low-end devices
+      detection = await faceapi
+        .detectSingleFace(videoElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.35 }))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+    }
 
     if (!detection) {
       playAudioTone('error');
@@ -551,54 +649,67 @@ async function executeAttendanceVerification() {
       return;
     }
 
-    // 2. Capture high-res snapshot
+    // 2. Capture lightweight thumbnail snapshot (Fix 6: weak campus Wi-Fi)
+    // Downscale from 1280x720 (1.5MB) down to 160x120 (~4KB)
+    // 60 students submitting simultaneously will consume only 240KB total burst rather than 90MB!
     const captureCanvas = document.createElement("canvas");
-    captureCanvas.width = videoElement.videoWidth;
-    captureCanvas.height = videoElement.videoHeight;
+    captureCanvas.width = 160;
+    captureCanvas.height = 120;
     const cCtx = captureCanvas.getContext("2d");
     cCtx.translate(captureCanvas.width, 0);
     cCtx.scale(-1, 1);
     cCtx.drawImage(videoElement, 0, 0, captureCanvas.width, captureCanvas.height);
-    const snapshotDataUrl = captureCanvas.toDataURL("image/jpeg", 0.90);
+    const snapshotDataUrl = captureCanvas.toDataURL("image/jpeg", 0.50);
 
     // --- SILENT ADVANCED ANTI-SPOOFING: TEXTURE & SCREEN REFLECTION ANALYSIS ---
-    // (Operates completely silently without cluttering the UI HUD)
     const { specularScore, textureScore, moireDetected } = analyzeFaceTextureAndScreenReflection(
       cCtx,
-      detection.detection.box,
+      { x: 20, y: 15, width: 120, height: 90 },
       captureCanvas.width,
       captureCanvas.height
     );
 
     const descriptorArray = Array.from(detection.descriptor);
     const deviceInfo = `${navigator.platform} | ${navigator.userAgent.slice(0, 80)}`;
+    const deviceId = getOrCreateDeviceId();
 
-    updateScannerStatus("Verifying Identity, 5-Min OTP & GPS Boundaries...", "loading");
+    updateScannerStatus("Verifying Identity, 30s OTP & GPS Boundaries...", "loading");
+
+    const payload = {
+      roll_no: rollNo,
+      session_code: sessionCode,
+      face_descriptor: descriptorArray,
+      snapshot_data_url: snapshotDataUrl,
+      latitude: geoCoordinates.latitude,
+      longitude: geoCoordinates.longitude,
+      accuracy: geoCoordinates.accuracy,
+      altitude: geoCoordinates.altitude,
+      altitude_accuracy: geoCoordinates.altitudeAccuracy,
+      device_info: deviceInfo,
+      device_id: deviceId,
+      liveness_verified: livenessVerified,
+      blink_count: blinkCount,
+      location_address: resolvedLocationAddress || null,
+      specular_score: specularScore,
+      texture_score: textureScore,
+      moire_detected: moireDetected,
+      ear_value: parseFloat(currentEAR.toFixed(3))
+    };
 
     // 3. Post to backend
-    const response = await fetch("/api/mark-attendance", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        roll_no: rollNo,
-        session_code: sessionCode,
-        face_descriptor: descriptorArray,
-        snapshot_data_url: snapshotDataUrl,
-        latitude: geoCoordinates.latitude,
-        longitude: geoCoordinates.longitude,
-        accuracy: geoCoordinates.accuracy,
-        altitude: geoCoordinates.altitude,
-        altitude_accuracy: geoCoordinates.altitudeAccuracy,
-        device_info: deviceInfo,
-        liveness_verified: livenessVerified,
-        blink_count: blinkCount,
-        location_address: resolvedLocationAddress || null,
-        specular_score: specularScore,
-        texture_score: textureScore,
-        moire_detected: moireDetected,
-        ear_value: parseFloat(currentEAR.toFixed(3))
-      })
-    });
+    let response;
+    try {
+      response = await fetch("/api/mark-attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } catch (networkErr) {
+      console.warn("Network post failed; queuing offline:", networkErr);
+      queueOfflineCheckin(payload);
+      resetScanBtn();
+      return;
+    }
 
     const data = await response.json();
 
@@ -635,6 +746,79 @@ async function executeAttendanceVerification() {
     playAudioTone('error');
     showScanAlert("Verification error: " + err.message, "error");
     resetScanBtn();
+  }
+}
+
+// -------------------------------------------------------------
+// HARDWARE DEVICE ID & OFFLINE CHECK-IN QUEUE (Fix 6 & Fix 8)
+// -------------------------------------------------------------
+function getOrCreateDeviceId() {
+  let devId = localStorage.getItem("veriface_device_id");
+  if (!devId) {
+    devId = "dev_" + Math.random().toString(36).substring(2, 10) + "_" + Date.now().toString(36);
+    localStorage.setItem("veriface_device_id", devId);
+  }
+  return devId;
+}
+
+function queueOfflineCheckin(payload) {
+  try {
+    const queue = JSON.parse(localStorage.getItem("veriface_offline_queue") || "[]");
+    queue.push({
+      payload: payload,
+      queuedAt: new Date().toISOString()
+    });
+    localStorage.setItem("veriface_offline_queue", JSON.stringify(queue));
+    updateOfflineBanner();
+    playAudioTone('warning');
+    showScanAlert("Campus Wi-Fi is weak or offline. Check-in saved securely on device. Auto-submitting when connection returns...", "warning");
+  } catch (e) {
+    console.warn("Offline queue error:", e);
+  }
+}
+
+async function flushOfflineCheckinQueue() {
+  if (!navigator.onLine) return;
+  const queue = JSON.parse(localStorage.getItem("veriface_offline_queue") || "[]");
+  if (queue.length === 0) {
+    updateOfflineBanner();
+    return;
+  }
+
+  const item = queue.shift();
+  try {
+    const res = await fetch("/api/mark-attendance", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item.payload)
+    });
+    if (res.ok) {
+      localStorage.setItem("veriface_offline_queue", JSON.stringify(queue));
+      updateOfflineBanner();
+      playAudioTone('success');
+      showScanAlert(`Offline check-in for ${item.payload.roll_no} successfully synced to server!`, "success");
+    } else {
+      // Put back if server rejected temporarily
+      queue.unshift(item);
+      localStorage.setItem("veriface_offline_queue", JSON.stringify(queue));
+    }
+  } catch (err) {
+    queue.unshift(item);
+    localStorage.setItem("veriface_offline_queue", JSON.stringify(queue));
+  }
+}
+
+function updateOfflineBanner() {
+  const banner = document.getElementById("offlineSyncBanner");
+  const countEl = document.getElementById("offlineCount");
+  const queue = JSON.parse(localStorage.getItem("veriface_offline_queue") || "[]");
+  if (banner && countEl) {
+    if (queue.length > 0) {
+      countEl.textContent = queue.length;
+      banner.classList.remove("hidden");
+    } else {
+      banner.classList.add("hidden");
+    }
   }
 }
 
@@ -784,46 +968,64 @@ function closeAlreadyMarkedModal() {
 
 // -------------------------------------------------------------
 // SILENT ADVANCED ANTI-SPOOFING: TEXTURE & SCREEN REFLECTION ANALYSIS
-// Evaluates specular screen glare and high-frequency Moiré patterns
+// Evaluates specular screen glare, unnatural color dispersion, and high-frequency Moiré patterns
 // Runs silently in memory without displaying intrusive UI elements.
 // -------------------------------------------------------------
 function analyzeFaceTextureAndScreenReflection(ctx, box, canvasWidth, canvasHeight) {
   try {
-    // 1. Crop Region of Interest (Face Box)
-    const startX = Math.max(0, Math.floor(box.x));
-    const startY = Math.max(0, Math.floor(box.y));
-    const boxW = Math.min(canvasWidth - startX, Math.floor(box.width));
-    const boxH = Math.min(canvasHeight - startY, Math.floor(box.height));
+    // 1. Correct for canvas coordinate orientation (handle flipped canvas)
+    // The detection box is relative to raw video stream.
+    // In captureCanvas, width is canvasWidth. Since we drew with scale(-1, 1),
+    // the horizontal coordinate of the face on the mirrored canvas is:
+    // mirroredX = canvasWidth - (box.x + box.width)
+    let startX = Math.floor(canvasWidth - (box.x + box.width));
+    let startY = Math.floor(box.y);
+    let boxW = Math.floor(box.width);
+    let boxH = Math.floor(box.height);
 
-    if (boxW < 20 || boxH < 20) {
-      return { specularScore: 1.2, textureScore: 120.0, moireDetected: false };
-    }
+    // Guard bounds
+    startX = Math.max(0, Math.min(startX, canvasWidth - 10));
+    startY = Math.max(0, Math.min(startY, canvasHeight - 10));
+    boxW = Math.max(20, Math.min(boxW, canvasWidth - startX));
+    boxH = Math.max(20, Math.min(boxH, canvasHeight - startY));
 
     const imgData = ctx.getImageData(startX, startY, boxW, boxH);
     const pixels = imgData.data;
     const totalPixels = boxW * boxH;
 
-    // 2. Specular Glare & Luminance Analysis
+    // 2. Specular Glare, Luminance & Chromatic Discrepancy Analysis
     let specularPixelCount = 0;
+    let unnaturalBlueScreenCount = 0;
     const lumaGrid = new Float32Array(totalPixels);
 
     for (let i = 0; i < pixels.length; i += 4) {
       const r = pixels[i];
       const g = pixels[i + 1];
       const b = pixels[i + 2];
+      
       // ITU-R BT.601 perceptual luminance
       const luma = 0.299 * r + 0.587 * g + 0.114 * b;
       lumaGrid[i / 4] = luma;
 
-      // Pure specular blowout saturation (typical of glass screen reflection)
-      if (r > 248 && g > 248 && b > 248) {
+      // Check A: Glass screen reflection blowout (high luma or saturated highlights)
+      if (luma > 238 || (r > 240 && g > 240 && b > 240)) {
         specularPixelCount++;
+      }
+
+      // Check B: Phone Screen Backlight / LED Color Imbalance
+      // Real human skin in any lighting has R >= G >= B (melanin absorption curve).
+      // Emissive screens displaying a photo often have excessive blue backlight subpixel peaks:
+      if (b > r + 8 && b > 110) {
+        unnaturalBlueScreenCount++;
       }
     }
 
-    const specularScore = parseFloat(((specularPixelCount / totalPixels) * 100).toFixed(2));
+    const specularRatio = (specularPixelCount / totalPixels) * 100;
+    const blueRatio = (unnaturalBlueScreenCount / totalPixels) * 100;
+    // Composite specular & screen glare index
+    const specularScore = parseFloat((specularRatio + (blueRatio * 0.45)).toFixed(2));
 
-    // 3. Discrete 2D Laplacian Variance (High-Frequency Micro-Texture)
+    // 3. Discrete 2D Laplacian Variance (High-Frequency Micro-Texture & Moiré Analysis)
     let lapSum = 0;
     let lapSqSum = 0;
     let validCount = 0;
@@ -840,7 +1042,7 @@ function analyzeFaceTextureAndScreenReflection(ctx, box, canvasWidth, canvasHeig
         validCount++;
 
         // Periodic Moiré interference detection (alternating subpixel contrast across consecutive columns)
-        if (x > 2 && Math.abs(lumaGrid[idx] - lumaGrid[idx - 2]) > 32 && Math.abs(lumaGrid[idx] - lumaGrid[idx - 1]) > 32) {
+        if (x > 2 && Math.abs(lumaGrid[idx] - lumaGrid[idx - 2]) > 26 && Math.abs(lumaGrid[idx] - lumaGrid[idx - 1]) > 26) {
           moireEnergyCount++;
         }
       }
@@ -849,7 +1051,7 @@ function analyzeFaceTextureAndScreenReflection(ctx, box, canvasWidth, canvasHeig
     const meanLap = lapSum / Math.max(1, validCount);
     const lapVariance = (lapSqSum / Math.max(1, validCount)) - (meanLap * meanLap);
     const textureScore = parseFloat(Math.max(0, lapVariance).toFixed(1));
-    const moireDetected = (moireEnergyCount / Math.max(1, validCount)) > 0.09;
+    const moireDetected = (moireEnergyCount / Math.max(1, validCount)) > 0.055;
 
     return {
       specularScore,
@@ -861,4 +1063,402 @@ function analyzeFaceTextureAndScreenReflection(ctx, box, canvasWidth, canvasHeig
     return { specularScore: 1.0, textureScore: 140.0, moireDetected: false };
   }
 }
+
+// -------------------------------------------------------------
+// INTERACTIVE VISUAL STUDENT ATTENDANCE CALENDAR ENGINE
+// Renders full monthly matrix with day-by-day class attendance details
+// -------------------------------------------------------------
+
+let currentCalYear = new Date().getFullYear();
+let currentCalMonth = new Date().getMonth(); // 0-indexed (0 = Jan, 10 = Nov)
+let studentAttendanceMap = {}; // Maps "YYYY-MM-DD" -> Array of lecture records
+let selectedCalDate = null;
+let currentStudentProfile = null;
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"
+];
+
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function scrollToCalendarSection(event) {
+  if (event) event.preventDefault();
+  const section = document.getElementById("attendanceCalendarSection");
+  if (!section) return;
+
+  section.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  const mainRollInput = document.getElementById("rollNoInput");
+  const calRollInput = document.getElementById("mainCalRollInput");
+  const rollToUse = (mainRollInput && mainRollInput.value.trim()) || 
+                    (calRollInput && calRollInput.value.trim()) || 
+                    localStorage.getItem("veriface_student_roll") || 
+                    "25021A0520";
+
+  if (calRollInput) {
+    calRollInput.value = rollToUse.toUpperCase();
+    loadStudentCalendarByRoll(rollToUse);
+  }
+}
+
+function selectQuickRoll(roll) {
+  const input = document.getElementById("mainCalRollInput");
+  if (input) input.value = roll.toUpperCase();
+  loadStudentCalendarByRoll(roll);
+}
+
+function changeCalendarMonth(delta) {
+  currentCalMonth += delta;
+  if (currentCalMonth < 0) {
+    currentCalMonth = 11;
+    currentCalYear -= 1;
+  } else if (currentCalMonth > 11) {
+    currentCalMonth = 0;
+    currentCalYear += 1;
+  }
+  renderCalendarGrid();
+}
+
+function jumpToCurrentMonth() {
+  const now = new Date();
+  currentCalYear = now.getFullYear();
+  currentCalMonth = now.getMonth();
+  renderCalendarGrid();
+}
+
+async function loadStudentCalendarByRoll(rollInput) {
+  const roll = (rollInput || "").trim().toUpperCase();
+  const container = document.getElementById("calGridDaysContainer");
+  const banner = document.getElementById("mainCalStudentBanner");
+  const detailsList = document.getElementById("calSelectedDayDetailsList");
+
+  if (!roll) {
+    if (container) {
+      container.innerHTML = `<div class="col-span-7 py-8 text-center text-amber-500 font-bold text-xs">Please enter a valid Student Roll Number.</div>`;
+    }
+    return;
+  }
+
+  // Save to localStorage for persistence
+  try {
+    localStorage.setItem("veriface_student_roll", roll);
+  } catch (e) {}
+
+  if (container) {
+    container.innerHTML = `
+      <div class="col-span-7 py-12 text-center text-slate-400 text-xs">
+        <svg class="animate-spin h-5 w-5 text-emerald-500 mx-auto mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+        </svg>
+        Loading attendance records for <strong class="text-slate-800 dark:text-white">${roll}</strong>...
+      </div>
+    `;
+  }
+
+  try {
+    const res = await fetch(`/api/student/history/${encodeURIComponent(roll)}`);
+    const data = await res.json();
+
+    if (!res.ok) {
+      if (banner) banner.classList.add("hidden");
+      if (container) {
+        container.innerHTML = `<div class="col-span-7 p-6 text-center text-rose-500 font-bold text-xs">${data.detail || "Student not found."}</div>`;
+      }
+      if (detailsList) {
+        detailsList.innerHTML = `<div class="p-6 text-center text-slate-400 text-xs">No attendance history found for ${roll}.</div>`;
+      }
+      return;
+    }
+
+    currentStudentProfile = data.student;
+    studentAttendanceMap = {};
+
+    // Group records by Date (YYYY-MM-DD)
+    if (data.records && data.records.length > 0) {
+      data.records.forEach(rec => {
+        if (!studentAttendanceMap[rec.date]) {
+          studentAttendanceMap[rec.date] = [];
+        }
+        studentAttendanceMap[rec.date].push(rec);
+      });
+    }
+
+    // Populate Student Banner
+    if (banner && currentStudentProfile) {
+      banner.classList.remove("hidden");
+      document.getElementById("mainCalStudentName").textContent = currentStudentProfile.name;
+      document.getElementById("mainCalStudentRoll").textContent = currentStudentProfile.roll_no;
+      document.getElementById("mainCalDepartment").textContent = currentStudentProfile.department || "Computer Science";
+      document.getElementById("mainCalAttendedCount").textContent = `${data.total_attended} / ${data.total_sessions} Classes`;
+
+      const rate = data.total_sessions > 0 ? Math.round((data.total_attended / data.total_sessions) * 100) : 0;
+      document.getElementById("mainCalRate").textContent = `${rate}%`;
+
+      const avatarEl = document.getElementById("mainCalAvatar");
+      if (avatarEl) {
+        if (currentStudentProfile.avatar_path) {
+          avatarEl.innerHTML = `<img src="${currentStudentProfile.avatar_path}" class="w-full h-full object-cover" />`;
+        } else {
+          avatarEl.textContent = currentStudentProfile.name.charAt(0).toUpperCase();
+        }
+      }
+    }
+
+    // Default calendar view to latest attendance month and date
+    if (data.records && data.records.length > 0) {
+      const latestDateStr = data.records[0].date;
+      const parts = latestDateStr.split("-").map(Number);
+      if (parts.length === 3) {
+        currentCalYear = parts[0];
+        currentCalMonth = parts[1] - 1; // 0-indexed
+        selectedCalDate = latestDateStr;
+      }
+    } else {
+      const todayStr = getLocalDateString(new Date());
+      selectedCalDate = todayStr;
+    }
+
+    renderCalendarGrid();
+    renderSelectedDayDetails(selectedCalDate);
+
+  } catch (err) {
+    if (container) {
+      container.innerHTML = `<div class="col-span-7 p-6 text-center text-rose-500 font-bold text-xs">Error loading calendar: ${err.message}</div>`;
+    }
+  }
+}
+
+function getLocalDateString(d) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function renderCalendarGrid() {
+  const container = document.getElementById("calGridDaysContainer");
+  const titleEl = document.getElementById("calMonthYearTitle");
+  if (!container) return;
+
+  if (titleEl) {
+    titleEl.textContent = `${MONTH_NAMES[currentCalMonth]} ${currentCalYear}`;
+  }
+
+  // Calculate days
+  const firstDayIndex = new Date(currentCalYear, currentCalMonth, 1).getDay(); // 0 = Sun, 1 = Mon...
+  const daysInMonth = new Date(currentCalYear, currentCalMonth + 1, 0).getDate();
+  const daysInPrevMonth = new Date(currentCalYear, currentCalMonth, 0).getDate();
+
+  const todayStr = getLocalDateString(new Date());
+
+  let html = "";
+
+  // 1. Padding days from previous month
+  for (let i = firstDayIndex - 1; i >= 0; i--) {
+    const prevDayNum = daysInPrevMonth - i;
+    html += `
+      <div class="h-16 sm:h-20 p-1.5 rounded-xl border border-transparent bg-slate-100/30 dark:bg-slate-900/20 text-slate-300 dark:text-slate-700 opacity-40 select-none">
+        <span class="text-[10px] font-bold block">${prevDayNum}</span>
+      </div>
+    `;
+  }
+
+  // 2. Actual days of the current month
+  for (let day = 1; day <= daysInMonth; day++) {
+    const monthStr = String(currentCalMonth + 1).padStart(2, "0");
+    const dayStr = String(day).padStart(2, "0");
+    const dateKey = `${currentCalYear}-${monthStr}-${dayStr}`;
+
+    const recordsOnDay = studentAttendanceMap[dateKey] || [];
+    const hasPresent = recordsOnDay.some(r => r.status === "PRESENT");
+    const hasFlagged = recordsOnDay.some(r => r.status === "FLAGGED_PROXY");
+    const hasRejected = recordsOnDay.some(r => r.status === "REJECTED");
+
+    const isToday = (dateKey === todayStr);
+    const isSelected = (dateKey === selectedCalDate);
+
+    let cellBg = "bg-white/80 dark:bg-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-750";
+    let borderStyle = isToday 
+      ? "border-2 border-blue-500 shadow-sm" 
+      : (isSelected ? "border-2 border-emerald-500 ring-2 ring-emerald-500/30" : "border border-slate-200/60 dark:border-white/10");
+
+    let statusPill = "";
+
+    if (hasPresent) {
+      cellBg = "bg-emerald-50/90 dark:bg-emerald-950/40 hover:bg-emerald-100/90";
+      const count = recordsOnDay.filter(r => r.status === "PRESENT").length;
+      statusPill = `
+        <div class="mt-1 px-1 py-0.5 rounded-md bg-emerald-600 text-white font-bold text-[9px] sm:text-[10px] flex items-center justify-center gap-0.5 shadow-xs">
+          <span>✓</span>
+          <span class="hidden sm:inline">${count} class${count > 1 ? 'es' : ''}</span>
+        </div>
+      `;
+    } else if (hasFlagged) {
+      cellBg = "bg-amber-50/90 dark:bg-amber-950/40 hover:bg-amber-100/90";
+      statusPill = `
+        <div class="mt-1 px-1 py-0.5 rounded-md bg-amber-500 text-white font-bold text-[9px] sm:text-[10px] flex items-center justify-center gap-0.5">
+          <span>⚠️</span>
+          <span class="hidden sm:inline">Proxy</span>
+        </div>
+      `;
+    } else if (hasRejected) {
+      cellBg = "bg-rose-50/90 dark:bg-rose-950/40 hover:bg-rose-100/90";
+      statusPill = `
+        <div class="mt-1 px-1 py-0.5 rounded-md bg-rose-500 text-white font-bold text-[9px] sm:text-[10px] flex items-center justify-center gap-0.5">
+          <span>✕</span>
+          <span class="hidden sm:inline">Failed</span>
+        </div>
+      `;
+    }
+
+    html += `
+      <button 
+        type="button" 
+        onclick="selectCalendarDate('${dateKey}')" 
+        class="h-16 sm:h-20 p-1.5 rounded-xl ${cellBg} ${borderStyle} transition-all flex flex-col justify-between text-left cursor-pointer group hover:scale-[1.02]"
+      >
+        <div class="flex items-center justify-between w-full">
+          <span class="text-xs sm:text-sm font-black text-slate-800 dark:text-slate-100 ${isToday ? 'text-blue-600 dark:text-blue-400' : ''}">${day}</span>
+          ${isToday ? '<span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>' : ''}
+        </div>
+        ${statusPill}
+      </button>
+    `;
+  }
+
+  // 3. Trailing blank cells to complete the 7-column row
+  const totalCells = firstDayIndex + daysInMonth;
+  const remainingCells = (7 - (totalCells % 7)) % 7;
+  for (let i = 1; i <= remainingCells; i++) {
+    html += `
+      <div class="h-16 sm:h-20 p-1.5 rounded-xl border border-transparent bg-slate-100/30 dark:bg-slate-900/20 text-slate-300 dark:text-slate-700 opacity-40 select-none">
+        <span class="text-[10px] font-bold block">${i}</span>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+}
+
+function selectCalendarDate(dateKey) {
+  selectedCalDate = dateKey;
+  renderCalendarGrid();
+  renderSelectedDayDetails(dateKey);
+}
+
+function renderSelectedDayDetails(dateKey) {
+  const titleEl = document.getElementById("calSelectedDateTitle");
+  const countBadge = document.getElementById("calSelectedDayClassCount");
+  const listEl = document.getElementById("calSelectedDayDetailsList");
+  if (!listEl) return;
+
+  if (!dateKey) {
+    if (titleEl) titleEl.textContent = "Select a date";
+    if (countBadge) countBadge.textContent = "0 Classes";
+    listEl.innerHTML = `<div class="text-center py-16 text-slate-400 text-xs">Click any date on the calendar to view attendance records.</div>`;
+    return;
+  }
+
+  // Safe Date parsing without UTC midnight shift
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  const dayName = !isNaN(dateObj.getTime()) ? DAY_NAMES[dateObj.getDay()] : "";
+  const monthName = !isNaN(dateObj.getTime()) ? MONTH_NAMES[dateObj.getMonth()] : "";
+  const formattedDate = `${dayName}, ${monthName} ${d}, ${y}`;
+
+  if (titleEl) titleEl.textContent = formattedDate;
+
+  const records = studentAttendanceMap[dateKey] || [];
+  if (countBadge) countBadge.textContent = `${records.length} Class${records.length === 1 ? '' : 'es'}`;
+
+  if (records.length === 0) {
+    listEl.innerHTML = `
+      <div class="text-center py-16 text-slate-400 text-xs">
+        <div class="text-2xl mb-2">🏖️</div>
+        <div class="font-bold text-slate-700 dark:text-slate-300 text-sm">No Attendance Logged</div>
+        <p class="mt-1">No lectures or check-ins were recorded for this day.</p>
+      </div>
+    `;
+    return;
+  }
+
+  listEl.innerHTML = records.map((rec, idx) => {
+    const isPresent = rec.status === "PRESENT";
+    const isFlagged = rec.status === "FLAGGED_PROXY";
+
+    let badgeClass = "bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800";
+    let statusText = "✓ Verified Present";
+
+    if (isFlagged) {
+      badgeClass = "bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800";
+      statusText = "⚠️ Flagged Proxy";
+    } else if (!isPresent) {
+      badgeClass = "bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800";
+      statusText = "✕ Rejected Mismatch";
+    }
+
+    const timeStr = rec.timestamp ? rec.timestamp.split(" ")[1] || rec.timestamp : "";
+
+    return `
+      <div class="p-3.5 rounded-2xl bg-white/80 dark:bg-slate-750/80 border border-slate-200/80 dark:border-white/10 shadow-sm flex flex-col gap-2 text-xs">
+        <div class="flex items-start justify-between gap-2">
+          <div>
+            <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Class Session #${idx + 1}</span>
+            <h5 class="text-sm font-black text-slate-900 dark:text-white mt-0.5">${rec.subject || "General Class Lecture"}</h5>
+          </div>
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${badgeClass} shrink-0">
+            ${statusText}
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 text-[11px] text-slate-600 dark:text-slate-300 pt-1.5 border-t border-slate-200/40 dark:border-white/5">
+          <div class="flex items-center gap-1.5">
+            <span>👨‍🏫 Faculty:</span>
+            <span class="font-bold text-slate-800 dark:text-white">${rec.lecturer_name || "Faculty Member"}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span>🕒 Check-in:</span>
+            <span class="font-mono font-bold text-slate-800 dark:text-white">${timeStr}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span>🔑 OTP Code:</span>
+            <span class="font-mono text-purple-600 dark:text-purple-400 font-bold">${rec.session_code || "N/A"}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span>🎯 Confidence:</span>
+            <span class="font-mono text-blue-600 dark:text-blue-400 font-bold">${rec.match_confidence}%</span>
+          </div>
+        </div>
+
+        ${rec.location_address ? `
+          <div class="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate pt-1">
+            <span>📍</span>
+            <span class="truncate">${rec.location_address}</span>
+          </div>
+        ` : ""}
+      </div>
+    `;
+  }).join("");
+}
+
+// Attach listener when document is ready
+document.addEventListener("DOMContentLoaded", () => {
+  const calRollInput = document.getElementById("mainCalRollInput");
+  if (calRollInput) {
+    calRollInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        loadStudentCalendarByRoll(calRollInput.value);
+      }
+    });
+
+    // Auto-load student calendar if previously used or pre-fill default
+    const savedRoll = localStorage.getItem("veriface_student_roll") || "25021A0520";
+    calRollInput.value = savedRoll;
+    loadStudentCalendarByRoll(savedRoll);
+  }
+});
+
 

@@ -203,6 +203,81 @@ def test_system():
     assert l_stats["total_samples"] >= 1
     print(f"  [PASS] GET /api/host/liveness-stats (Observed {l_stats['total_samples']} everyday telemetry samples)")
 
+    # 13. Test Keep-Alive Health Route (Fix 9: Render sleep mitigation)
+    res = client.get("/health")
+    assert res.status_code == 200
+    assert res.json()["status"] == "healthy"
+    print("  [PASS] GET /health & /api/health (Uptime pinger keep-alive 200 OK)")
+
+    # 14. Test 30-Second Rolling OTP (Fix 2: OTP forwarding mitigation)
+    res = client.get(f"/api/lecturer/rolling-otp/{session_id}")
+    assert res.status_code == 200
+    rolling_data = res.json()
+    assert "rolling_otp" in rolling_data
+    assert len(rolling_data["rolling_otp"]) == 6
+    rolling_code = rolling_data["rolling_otp"]
+    print(f"  [PASS] GET /api/lecturer/rolling-otp/{session_id} (Dynamic 30s Code: {rolling_code})")
+
+    # 15. Test Lightweight Vector-Only Check-in with Rolling OTP (Fix 6: Weak Wi-Fi & Fix 2)
+    vector_roll = f"VEC-{uid}"
+    client.post("/api/register", json={
+        "roll_no": vector_roll,
+        "name": "Vector Only Student",
+        "department": "Computer Science",
+        "face_descriptor": student_descriptor,
+        "avatar_data_url": ""  # No image uploaded
+    })
+    vec_payload = {
+        "roll_no": vector_roll,
+        "face_descriptor": student_descriptor,
+        "session_code": rolling_code,  # Verified via 30s rolling projector OTP
+        "snapshot_data_url": "",      # Lightweight vector-only (< 1.5 KB JSON payload)
+        "device_id": f"dev-{uid}",
+        "liveness_verified": True,
+        "blink_count": 1
+    }
+    res = client.post("/api/mark-attendance", json=vec_payload, headers={"X-Forwarded-For": f"198.51.100.{uid % 100 + 10}"})
+    assert res.status_code == 200
+    assert res.json()["status"] == "PRESENT"
+    print("  [PASS] POST /api/mark-attendance (Lightweight 1.5 KB payload verified via 30s Rolling OTP)")
+
+    # 16. Test Lecturer Manual Override (Fix 4: Low-end phones / camera failure)
+    override_roll = f"MAN-{uid}"
+    client.post("/api/register", json={
+        "roll_no": override_roll,
+        "name": "Broken Camera Student",
+        "department": "Mechanical Eng",
+        "face_descriptor": student_descriptor,
+        "avatar_data_url": ""
+    })
+    res = client.post("/api/lecturer/manual-override", json={
+        "session_id": session_id,
+        "lecturer_id": lec_id,
+        "roll_no": override_roll,
+        "reason": "Hardware camera failure / Low light"
+    })
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+    print("  [PASS] POST /api/lecturer/manual-override (Faculty marked broken-camera student Present)")
+
+    # 17. Test DPDP Act 2023 Biometric Erasure (Fix 3: Right to Erasure)
+    res = client.delete(f"/api/student/delete-biometrics/{override_roll}")
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+    # Confirm user is erased
+    lookup_res = client.get(f"/api/user/lookup/{override_roll}")
+    assert lookup_res.status_code == 404
+    print(f"  [PASS] DELETE /api/student/delete-biometrics/{override_roll} (DPDP Act Right to Erasure verified)")
+
+    # 18. Test Full Database Backup (Fix 5: Render free disk is ephemeral)
+    res_json_bk = client.get("/api/host/backup-database?format=json")
+    assert res_json_bk.status_code == 200
+    assert "application/json" in res_json_bk.headers["content-type"]
+    res_csv_bk = client.get("/api/host/backup-database?format=csv")
+    assert res_csv_bk.status_code == 200
+    assert "text/csv" in res_csv_bk.headers["content-type"]
+    print("  [PASS] GET /api/host/backup-database (JSON & CSV complete database export verified)")
+
     print("\n>>> ALL TESTS PASSED SUCCESSFULLY! VeriFace is completely verified and operational. <<<\n")
 
 if __name__ == "__main__":

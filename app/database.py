@@ -2,12 +2,36 @@ import sqlite3
 import json
 import os
 import math
+import secrets
+import io
+import csv
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "attendance.db")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
+    """
+    Returns database connection.
+    If DATABASE_URL is configured (Supabase / Neon / Render Postgres), connects to PostgreSQL;
+    otherwise seamlessly connects to local SQLite database.
+    """
+    if DATABASE_URL and (DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")):
+        try:
+            import psycopg2
+            from psycopg2.extras import RealDictCursor
+            url = DATABASE_URL
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            conn = psycopg2.connect(url, cursor_factory=RealDictCursor)
+            return conn
+        except ImportError:
+            # psycopg2 not installed in local environment; fallback cleanly to SQLite
+            pass
+        except Exception as e:
+            print(f"PostgreSQL connection error: {e}. Using SQLite fallback.")
+            
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -25,6 +49,7 @@ def init_db():
         department TEXT DEFAULT 'Computer Science',
         face_descriptor TEXT NOT NULL,
         avatar_path TEXT NOT NULL,
+        dpdp_consent INTEGER DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         status TEXT DEFAULT 'ACTIVE'
     );
@@ -53,6 +78,7 @@ def init_db():
         lecturer_name TEXT NOT NULL,
         subject TEXT NOT NULL,
         session_code TEXT NOT NULL,
+        session_secret TEXT DEFAULT '',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         expires_at TIMESTAMP NOT NULL,
         duration_minutes INTEGER DEFAULT 5,
@@ -73,6 +99,7 @@ def init_db():
         match_distance REAL NOT NULL,
         match_confidence REAL NOT NULL,
         ip_address TEXT,
+        device_id TEXT,
         user_agent TEXT,
         latitude REAL,
         longitude REAL,
@@ -89,6 +116,10 @@ def init_db():
         session_code TEXT,
         session_id INTEGER,
         lecturer_id TEXT,
+        specular_score REAL DEFAULT 0.0,
+        texture_score REAL DEFAULT 100.0,
+        moire_detected INTEGER DEFAULT 0,
+        ear_value REAL DEFAULT 0.30,
         FOREIGN KEY (user_id) REFERENCES users (id)
     );
     """)
@@ -118,6 +149,20 @@ def init_db():
         cursor.execute("ALTER TABLE attendance ADD COLUMN moire_detected INTEGER DEFAULT 0")
     if "ear_value" not in existing_cols:
         cursor.execute("ALTER TABLE attendance ADD COLUMN ear_value REAL DEFAULT 0.30")
+    if "device_id" not in existing_cols:
+        cursor.execute("ALTER TABLE attendance ADD COLUMN device_id TEXT DEFAULT ''")
+
+    # Dynamic schema migration for class_sessions
+    cursor.execute("PRAGMA table_info(class_sessions)")
+    cs_cols = [r["name"] for r in cursor.fetchall()]
+    if "session_secret" not in cs_cols:
+        cursor.execute("ALTER TABLE class_sessions ADD COLUMN session_secret TEXT DEFAULT ''")
+
+    # Dynamic schema migration for users
+    cursor.execute("PRAGMA table_info(users)")
+    u_cols = [r["name"] for r in cursor.fetchall()]
+    if "dpdp_consent" not in u_cols:
+        cursor.execute("ALTER TABLE users ADD COLUMN dpdp_consent INTEGER DEFAULT 1")
 
     # Table for Everyday Liveness Telemetry (Continuous Model Training)
     cursor.execute("""
@@ -202,7 +247,7 @@ def get_all_settings() -> Dict[str, str]:
     conn.close()
     return {r["key"]: r["value"] for r in rows}
 
-def register_user(roll_no: str, name: str, department: str, face_descriptor: list, avatar_path: str) -> Dict[str, Any]:
+def register_user(roll_no: str, name: str, department: str, face_descriptor: list, avatar_path: str, dpdp_consent: int = 1) -> Dict[str, Any]:
     conn = get_db()
     cursor = conn.cursor()
     roll_clean = roll_no.strip().upper()
@@ -211,13 +256,13 @@ def register_user(roll_no: str, name: str, department: str, face_descriptor: lis
     desc_json = json.dumps(face_descriptor)
 
     cursor.execute("""
-    INSERT INTO users (roll_no, name, department, face_descriptor, avatar_path)
-    VALUES (?, ?, ?, ?, ?)
-    """, (roll_clean, name_clean, dept_clean, desc_json, avatar_path))
+    INSERT INTO users (roll_no, name, department, face_descriptor, avatar_path, dpdp_consent)
+    VALUES (?, ?, ?, ?, ?, ?)
+    """, (roll_clean, name_clean, dept_clean, desc_json, avatar_path, dpdp_consent))
     user_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    return {"id": user_id, "roll_no": roll_clean, "name": name_clean, "department": dept_clean, "avatar_path": avatar_path}
+    return {"id": user_id, "roll_no": roll_clean, "name": name_clean, "department": dept_clean, "avatar_path": avatar_path, "dpdp_consent": dpdp_consent}
 
 def get_user_by_roll_no(roll_no: str) -> Optional[Dict[str, Any]]:
     conn = get_db()
@@ -246,7 +291,7 @@ def get_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
 def get_all_users() -> List[Dict[str, Any]]:
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, roll_no, name, department, avatar_path, created_at, status FROM users ORDER BY roll_no ASC")
+    cursor.execute("SELECT id, roll_no, name, department, avatar_path, dpdp_consent, created_at, status FROM users ORDER BY roll_no ASC")
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -263,17 +308,101 @@ def delete_user(user_id: int) -> bool:
                 os.remove(full_avatar_path)
             except Exception:
                 pass
-    cursor.execute("DELETE FROM attendance WHERE user_id = ?", (user_id,))
+
     cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    cursor.execute("DELETE FROM liveness_telemetry WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM liveness_model_profiles WHERE user_id = ?", (user_id,))
     conn.commit()
     deleted = cursor.rowcount > 0
     conn.close()
     return deleted
 
+def delete_student_biometrics(roll_no: str) -> Dict[str, Any]:
+    """
+    Compliance with Section 12 of India's Digital Personal Data Protection (DPDP) Act 2023.
+    (Right to Erasure / Right to be Forgotten)
+    Permanently erases student's face embedding vector, liveness profile, and removes avatar files.
+    """
+    clean_roll = roll_no.strip().upper()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, avatar_path FROM users WHERE roll_no = ?", (clean_roll,))
+    user_row = cursor.fetchone()
+    if not user_row:
+        conn.close()
+        return {"success": False, "message": f"No registered student found with Roll Number '{clean_roll}'."}
+
+    user_id = user_row["id"]
+    student_name = user_row["name"]
+    avatar_path = user_row["avatar_path"]
+
+    # Purge telemetry and AI profiles
+    cursor.execute("DELETE FROM liveness_telemetry WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM liveness_model_profiles WHERE user_id = ?", (user_id,))
+    # Delete student record
+    cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    # Anonymize past attendance history
+    cursor.execute("UPDATE attendance SET name = 'DELETED_STUDENT (DPDP)', snapshot_path = '' WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+    # Remove avatar file on disk if exists
+    if avatar_path and avatar_path.startswith("/static/uploads/"):
+        root_dir = os.path.dirname(os.path.dirname(__file__))
+        rel_path = avatar_path.lstrip("/")
+        disk_file = os.path.join(root_dir, rel_path.replace("/", os.sep))
+        if os.path.exists(disk_file):
+            try:
+                os.remove(disk_file)
+            except Exception:
+                pass
+
+    return {
+        "success": True,
+        "message": f"Biometric vectors, facial embeddings, and profiles for {clean_roll} ({student_name}) have been permanently erased under DPDP Act 2023."
+    }
+
 def get_today_attendance_for_user(user_id: int, date_str: str) -> Optional[Dict[str, Any]]:
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM attendance WHERE user_id = ? AND date = ? ORDER BY timestamp DESC LIMIT 1", (user_id, date_str))
+    cursor.execute("SELECT * FROM attendance WHERE user_id = ? AND date = ? ORDER BY id DESC LIMIT 1", (user_id, date_str))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_last_attendance_for_user(user_id: int) -> Optional[Dict[str, Any]]:
+    """Fetches the most recent verified attendance entry with GPS coordinates for impossible travel check."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT id, user_id, roll_no, latitude, longitude, timestamp, date
+    FROM attendance
+    WHERE user_id = ? AND latitude IS NOT NULL AND status IN ('PRESENT', 'FLAGGED_PROXY')
+    ORDER BY id DESC LIMIT 1
+    """, (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_device_recent_checkin(device_id: str, session_id: Optional[int], exclude_roll_no: str) -> Optional[Dict[str, Any]]:
+    """Checks if this hardware device was already used by another student in this class session."""
+    if not device_id or not device_id.strip():
+        return None
+    conn = get_db()
+    cursor = conn.cursor()
+    if session_id:
+        cursor.execute("""
+        SELECT id, roll_no, name, timestamp, device_id FROM attendance
+        WHERE device_id = ? AND session_id = ? AND roll_no != ? AND status IN ('PRESENT', 'FLAGGED_PROXY')
+        ORDER BY id DESC LIMIT 1
+        """, (device_id.strip(), session_id, exclude_roll_no.strip().upper()))
+    else:
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        cursor.execute("""
+        SELECT id, roll_no, name, timestamp, device_id FROM attendance
+        WHERE device_id = ? AND date = ? AND roll_no != ? AND status IN ('PRESENT', 'FLAGGED_PROXY')
+        ORDER BY id DESC LIMIT 1
+        """, (device_id.strip(), today_str, exclude_roll_no.strip().upper()))
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -305,7 +434,8 @@ def record_attendance(
     specular_score: Optional[float] = 0.0,
     texture_score: Optional[float] = 100.0,
     moire_detected: int = 0,
-    ear_value: Optional[float] = 0.30
+    ear_value: Optional[float] = 0.30,
+    device_id: Optional[str] = ""
 ) -> int:
     conn = get_db()
     cursor = conn.cursor()
@@ -315,14 +445,15 @@ def record_attendance(
         ip_address, user_agent, latitude, longitude, accuracy, location_address,
         is_proxy_suspect, proxy_flags, snapshot_path, liveness_verified, blink_count,
         altitude, altitude_accuracy, session_code, session_id, lecturer_id,
-        specular_score, texture_score, moire_detected, ear_value
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        specular_score, texture_score, moire_detected, ear_value, device_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         user_id, roll_no, name, date, status, match_distance, match_confidence,
         ip_address, user_agent, latitude, longitude, accuracy, location_address,
         is_proxy_suspect, proxy_flags, snapshot_path, liveness_verified, blink_count,
         altitude, altitude_accuracy, session_code, session_id, lecturer_id,
-        specular_score or 0.0, texture_score or 100.0, moire_detected, ear_value or 0.30
+        specular_score or 0.0, texture_score or 100.0, moire_detected, ear_value or 0.30,
+        device_id or ""
     ))
     log_id = cursor.lastrowid
 
@@ -342,6 +473,58 @@ def record_attendance(
     conn.commit()
     conn.close()
     return log_id
+
+def record_manual_override(session_id: int, lecturer_id: str, roll_no: str, reason: str) -> Dict[str, Any]:
+    """Faculty manual override for students with camera failure, poor lighting, or low-end device."""
+    clean_roll = roll_no.strip().upper()
+    user = get_user_by_roll_no(clean_roll)
+    if not user:
+        return {"success": False, "message": f"Student '{clean_roll}' is not registered in the system."}
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM class_sessions WHERE id = ?", (session_id,))
+    sess = cursor.fetchone()
+    if not sess:
+        conn.close()
+        return {"success": False, "message": "Class session not found."}
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Check if already marked
+    cursor.execute("""
+    SELECT id FROM attendance
+    WHERE user_id = ? AND session_id = ? AND status IN ('PRESENT', 'FLAGGED_PROXY')
+    """, (user["id"], session_id))
+    existing = cursor.fetchone()
+    if existing:
+        conn.close()
+        return {"success": False, "message": f"Student {clean_roll} is already marked for this session."}
+
+    cursor.execute("""
+    INSERT INTO attendance (
+        user_id, roll_no, name, date, timestamp, status, match_distance, match_confidence,
+        ip_address, user_agent, location_address, is_proxy_suspect, proxy_flags,
+        admin_notes, liveness_verified, blink_count, session_code, session_id, lecturer_id
+    ) VALUES (?, ?, ?, ?, ?, 'PRESENT', 0.0, 100.0, 'FACULTY_OVERRIDE', 'Lecturer Portal',
+              'Classroom Manual Override', 0, '', ?, 1, 1, ?, ?, ?)
+    """, (
+        user["id"], clean_roll, user["name"], today_str, now_str,
+        f"Faculty manual override by {lecturer_id}: {reason}", sess["session_code"], session_id, lecturer_id
+    ))
+    override_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+
+    return {
+        "success": True,
+        "override_id": override_id,
+        "roll_no": clean_roll,
+        "name": user["name"],
+        "status": "PRESENT",
+        "message": f"Student {clean_roll} ({user['name']}) marked Present via faculty manual override."
+    }
 
 def count_distinct_users_on_ip_today(ip_address: str, date_str: str, exclude_user_id: Optional[int] = None) -> int:
     conn = get_db()
@@ -428,60 +611,75 @@ def get_dashboard_stats(date_str: str) -> Dict[str, Any]:
     SELECT COUNT(DISTINCT user_id) as cnt FROM attendance
     WHERE date = ? AND status IN ('PRESENT', 'FLAGGED_PROXY')
     """, (date_str,))
-    today_present = cursor.fetchone()["cnt"]
+    present_today = cursor.fetchone()["cnt"]
 
-    # Today's proxy flags
+    # Today's flagged suspect
     cursor.execute("""
     SELECT COUNT(*) as cnt FROM attendance
     WHERE date = ? AND is_proxy_suspect = 1
     """, (date_str,))
-    today_proxy_alerts = cursor.fetchone()["cnt"]
+    flagged_today = cursor.fetchone()["cnt"]
+
+    # Today's rejected
+    cursor.execute("""
+    SELECT COUNT(*) as cnt FROM attendance
+    WHERE date = ? AND status = 'REJECTED'
+    """, (date_str,))
+    rejected_today = cursor.fetchone()["cnt"]
+
+    # Unique IPs today
+    cursor.execute("""
+    SELECT COUNT(DISTINCT ip_address) as cnt FROM attendance
+    WHERE date = ?
+    """, (date_str,))
+    unique_ips = cursor.fetchone()["cnt"]
 
     # Attendance rate
     rate = 0.0
     if total_students > 0:
-        rate = round((today_present / total_students) * 100, 1)
+        rate = round((present_today / total_students) * 100, 1)
 
     conn.close()
     return {
         "total_students": total_students,
-        "today_present": today_present,
-        "today_proxy_alerts": today_proxy_alerts,
-        "attendance_rate": rate,
-        "date": date_str
+        "present_today": present_today,
+        "today_present": present_today,
+        "flagged_today": flagged_today,
+        "rejected_today": rejected_today,
+        "unique_ips_today": unique_ips,
+        "attendance_rate": rate
     }
 
-# =========================================================================
-# LECTURER & CLASS SESSION OTP MANAGEMENT (HOST REGISTERED)
-# =========================================================================
+# --- Lecturer / Faculty Management Operations ---
 
-def register_lecturer(lecturer_id: str, name: str, email: str, department: str, password: str, assigned_subject: str) -> Dict[str, Any]:
+def register_lecturer(lecturer_id: str, name: str, password: str, department: str = "Computer Science", email: str = "", assigned_subject: str = "Computer Vision") -> Dict[str, Any]:
     conn = get_db()
     cursor = conn.cursor()
     clean_id = lecturer_id.strip().upper()
     clean_name = name.strip()
-    clean_email = email.strip()
     clean_dept = department.strip() if department else "Computer Science"
-    clean_subj = assigned_subject.strip() if assigned_subject else "General"
+    clean_sub = assigned_subject.strip() if assigned_subject else "General Studies"
 
     cursor.execute("""
     INSERT INTO lecturers (lecturer_id, name, email, department, password, assigned_subject)
     VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(lecturer_id) DO UPDATE SET
-        name=excluded.name, email=excluded.email, department=excluded.department,
-        password=excluded.password, assigned_subject=excluded.assigned_subject, status='ACTIVE'
-    """, (clean_id, clean_name, clean_email, clean_dept, password, clean_subj))
-    
+    """, (clean_id, clean_name, email.strip(), clean_dept, password, clean_sub))
+    lec_id = cursor.lastrowid
     conn.commit()
-    cursor.execute("SELECT * FROM lecturers WHERE lecturer_id = ?", (clean_id,))
-    row = cursor.fetchone()
     conn.close()
-    return dict(row)
+    return {
+        "id": lec_id,
+        "lecturer_id": clean_id,
+        "name": clean_name,
+        "email": email.strip(),
+        "department": clean_dept,
+        "assigned_subject": clean_sub
+    }
 
 def get_all_lecturers() -> List[Dict[str, Any]]:
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, lecturer_id, name, email, department, assigned_subject, created_at, status FROM lecturers WHERE status='ACTIVE' ORDER BY name ASC")
+    cursor.execute("SELECT id, lecturer_id, name, email, department, assigned_subject, created_at, status FROM lecturers ORDER BY name ASC")
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -489,7 +687,7 @@ def get_all_lecturers() -> List[Dict[str, Any]]:
 def get_lecturer_by_id(lecturer_id: str) -> Optional[Dict[str, Any]]:
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM lecturers WHERE lecturer_id = ? AND status='ACTIVE'", (lecturer_id.strip().upper(),))
+    cursor.execute("SELECT * FROM lecturers WHERE lecturer_id = ? AND status = 'ACTIVE'", (lecturer_id.strip().upper(),))
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -517,7 +715,7 @@ def verify_lecturer_login(lecturer_id: str, password: str) -> Optional[Dict[str,
 
 def create_class_session(lecturer_id: str, lecturer_name: str, subject: str, custom_code: str, duration_minutes: int = 5) -> Dict[str, Any]:
     """
-    Creates a customized or auto-generated 5-minute session OTP.
+    Creates a customized or auto-generated 5-minute session OTP with a secure secret for rolling OTPs.
     Deactivates any previous active session for this lecturer.
     """
     conn = get_db()
@@ -527,14 +725,15 @@ def create_class_session(lecturer_id: str, lecturer_name: str, subject: str, cus
     now = datetime.now()
     from datetime import timedelta
     expires_at = now + timedelta(minutes=duration_minutes)
+    session_secret = secrets.token_hex(8)
 
     # Deactivate existing active sessions for this lecturer
     cursor.execute("UPDATE class_sessions SET is_active = 0 WHERE lecturer_id = ?", (lecturer_id,))
 
     cursor.execute("""
-    INSERT INTO class_sessions (lecturer_id, lecturer_name, subject, session_code, created_at, expires_at, duration_minutes, is_active)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-    """, (lecturer_id, lecturer_name, subject, clean_code, now.strftime("%Y-%m-%d %H:%M:%S"), expires_at.strftime("%Y-%m-%d %H:%M:%S"), duration_minutes))
+    INSERT INTO class_sessions (lecturer_id, lecturer_name, subject, session_code, session_secret, created_at, expires_at, duration_minutes, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+    """, (lecturer_id, lecturer_name, subject, clean_code, session_secret, now.strftime("%Y-%m-%d %H:%M:%S"), expires_at.strftime("%Y-%m-%d %H:%M:%S"), duration_minutes))
 
     session_id = cursor.lastrowid
     conn.commit()
@@ -546,11 +745,20 @@ def create_class_session(lecturer_id: str, lecturer_name: str, subject: str, cus
         "lecturer_name": lecturer_name,
         "subject": subject,
         "session_code": clean_code,
+        "session_secret": session_secret,
         "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
         "expires_at": expires_at.strftime("%Y-%m-%d %H:%M:%S"),
         "duration_minutes": duration_minutes,
         "remaining_seconds": duration_minutes * 60
     }
+
+def get_class_session_by_id(session_id: int) -> Optional[Dict[str, Any]]:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM class_sessions WHERE id = ?", (session_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
 
 def get_active_session_by_code(code: str) -> Optional[Dict[str, Any]]:
     """Validates student OTP input against currently active, non-expired class sessions."""
@@ -566,6 +774,19 @@ def get_active_session_by_code(code: str) -> Optional[Dict[str, Any]]:
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
+
+def get_all_active_sessions() -> List[Dict[str, Any]]:
+    conn = get_db()
+    cursor = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cursor.execute("""
+    SELECT * FROM class_sessions
+    WHERE is_active = 1 AND expires_at > ?
+    ORDER BY id DESC
+    """, (now_str,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 def get_active_session_for_lecturer(lecturer_id: str) -> Optional[Dict[str, Any]]:
     conn = get_db()
@@ -602,7 +823,7 @@ def get_session_attendees(session_id: int) -> List[Dict[str, Any]]:
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-    SELECT id, roll_no, name, timestamp, status, match_confidence, ip_address, location_address, snapshot_path, altitude
+    SELECT id, roll_no, name, timestamp, status, match_confidence, ip_address, device_id, location_address, snapshot_path, altitude
     FROM attendance
     WHERE session_id = ?
     ORDER BY id DESC
@@ -610,6 +831,71 @@ def get_session_attendees(session_id: int) -> List[Dict[str, Any]]:
     rows = cursor.fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+def get_student_attendance_history(roll_no: str) -> List[Dict[str, Any]]:
+    """Fetches full attendance history for a student with class and subject details."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT 
+        a.id, a.roll_no, a.name, a.date, a.timestamp, a.status,
+        a.match_confidence, a.match_distance, a.location_address,
+        a.session_code, a.session_id, a.altitude,
+        cs.subject, cs.lecturer_name, cs.duration_minutes
+    FROM attendance a
+    LEFT JOIN class_sessions cs ON a.session_id = cs.id
+    WHERE a.roll_no = ?
+    ORDER BY a.id DESC
+    """, (roll_no.strip().upper(),))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+def export_full_database_backup() -> Dict[str, Any]:
+    """Generates complete database JSON archive for on-demand or weekly backup on ephemeral cloud disks."""
+    conn = get_db()
+    cursor = conn.cursor()
+    tables = ["users", "attendance", "lecturers", "class_sessions", "settings", "liveness_telemetry", "liveness_model_profiles"]
+    data = {}
+    for t in tables:
+        try:
+            cursor.execute(f"SELECT * FROM {t}")
+            data[t] = [dict(r) for r in cursor.fetchall()]
+        except Exception:
+            data[t] = []
+    conn.close()
+    return {
+        "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "platform": "VeriFace",
+        "tables": data
+    }
+
+def export_full_database_csv() -> str:
+    """Generates complete CSV export of attendance entries."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT 
+        a.id, a.roll_no, a.name, a.date, a.timestamp, a.status,
+        a.match_confidence, a.match_distance, a.ip_address, a.device_id,
+        a.latitude, a.longitude, a.accuracy, a.altitude, a.location_address,
+        a.session_code, a.session_id, a.lecturer_id, a.is_proxy_suspect, a.proxy_flags,
+        a.liveness_verified, a.blink_count, a.admin_notes
+    FROM attendance a
+    ORDER BY a.id DESC
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    if rows:
+        writer.writerow(rows[0].keys())
+        for r in rows:
+            writer.writerow(list(r))
+    else:
+        writer.writerow(["id", "roll_no", "name", "date", "status", "match_confidence"])
+    return output.getvalue()
 
 # --- Everyday Liveness AI Training & Adaptive Profile Calibration ---
 
@@ -625,10 +911,10 @@ def get_all_liveness_profiles() -> List[Dict[str, Any]]:
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("""
-    SELECT p.*, u.name, u.department, u.avatar_path
+    SELECT p.*, u.name, u.department
     FROM liveness_model_profiles p
-    JOIN users u ON p.user_id = u.id
-    ORDER BY p.sample_count DESC, p.last_calibrated_at DESC
+    LEFT JOIN users u ON p.user_id = u.id
+    ORDER BY p.last_calibrated_at DESC
     """)
     rows = cursor.fetchall()
     conn.close()
@@ -637,43 +923,39 @@ def get_all_liveness_profiles() -> List[Dict[str, Any]]:
 def get_liveness_training_stats() -> Dict[str, Any]:
     conn = get_db()
     cursor = conn.cursor()
+
     cursor.execute("SELECT COUNT(*) as total_samples FROM liveness_telemetry")
     total_samples = cursor.fetchone()["total_samples"]
 
-    cursor.execute("SELECT COUNT(*) as total_profiles FROM liveness_model_profiles")
-    total_profiles = cursor.fetchone()["total_profiles"]
+    cursor.execute("SELECT COUNT(DISTINCT user_id) as enrolled_students FROM liveness_telemetry")
+    enrolled_students = cursor.fetchone()["enrolled_students"]
 
-    cursor.execute("""
-    SELECT AVG(mean_ear) as global_avg_ear, 
-           AVG(adaptive_blink_threshold) as global_avg_thresh, 
-           AVG(mean_texture) as global_avg_texture,
-           AVG(mean_specular) as global_avg_specular
-    FROM liveness_model_profiles
-    """)
-    row = cursor.fetchone()
+    cursor.execute("SELECT COUNT(*) as calibrated_count FROM liveness_model_profiles")
+    calibrated_profiles = cursor.fetchone()["calibrated_count"]
+
+    cursor.execute("SELECT AVG(baseline_ear) as avg_ear, AVG(texture_score) as avg_tex, AVG(specular_score) as avg_spec FROM liveness_telemetry WHERE status = 'PRESENT'")
+    avg_row = cursor.fetchone()
+
     conn.close()
-
     return {
         "total_samples": total_samples,
-        "total_profiles": total_profiles,
-        "global_avg_ear": round(row["global_avg_ear"] or 0.31, 3),
-        "global_avg_thresh": round(row["global_avg_thresh"] or 0.22, 3),
-        "global_avg_texture": round(row["global_avg_texture"] or 150.0, 1),
-        "global_avg_specular": round(row["global_avg_specular"] or 1.5, 2),
-        "last_trained": get_setting("liveness_model_last_trained", "Never (Pre-trained defaults)")
+        "enrolled_students": enrolled_students,
+        "calibrated_profiles": calibrated_profiles,
+        "global_average_ear": round(avg_row["avg_ear"], 3) if avg_row and avg_row["avg_ear"] else 0.30,
+        "global_average_texture": round(avg_row["avg_tex"], 1) if avg_row and avg_row["avg_tex"] else 150.0,
+        "global_average_specular": round(avg_row["avg_spec"], 2) if avg_row and avg_row["avg_spec"] else 1.2,
+        "last_trained_at": get_setting("liveness_model_last_trained", "Never Trained")
     }
 
 def train_and_recalibrate_liveness_model() -> Dict[str, Any]:
     """
-    Online Adaptive Liveness Model Training:
-    Processes all verified everyday attendance telemetry samples.
-    Derives personalized statistical distribution (mean, standard deviation) for EAR and micro-textures.
+    Continuous Online Learning Engine:
+    Processes all everyday session telemetry from genuine student check-ins.
     Recalibrates personalized adaptive blink thresholds for all students.
     """
     conn = get_db()
     cursor = conn.cursor()
 
-    # Get distinct users with verified or proxy-screen samples
     cursor.execute("SELECT DISTINCT user_id, roll_no FROM liveness_telemetry WHERE status IN ('PRESENT', 'FLAGGED_PROXY')")
     users = cursor.fetchall()
 
@@ -705,7 +987,6 @@ def train_and_recalibrate_liveness_model() -> Dict[str, Any]:
         variance_ear = sum((e - mean_ear) ** 2 for e in ears) / max(1, len(ears) - 1)
         std_ear = math.sqrt(variance_ear) if len(ears) > 1 else 0.03
 
-        # Adaptive threshold: 1.8 std deviations below mean resting EAR (clamped between 0.18 and 0.25)
         adaptive_thresh = max(0.18, min(0.25, mean_ear - (1.8 * std_ear)))
 
         mean_spec = sum(specs) / len(specs) if specs else 1.5
@@ -737,4 +1018,3 @@ def train_and_recalibrate_liveness_model() -> Dict[str, Any]:
         "calibrated_students": calibrated_count,
         "timestamp": now_str
     }
-

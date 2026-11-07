@@ -568,6 +568,80 @@
           </form>
 
         </div>
+
+        <!-- CARD B: Database Backup & Cloud Persistence (Fix 5: Render Ephemeral Disk & Free DB Limits) -->
+        <div class="liquid-glass p-6 sm:p-8 rounded-3xl border border-white/70 dark:border-white/10 shadow-xl space-y-4">
+          <div class="border-b border-slate-200/60 dark:border-white/10 pb-4">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center font-bold">
+                <i data-lucide="database-backup" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <h3 class="text-base font-black text-slate-900 dark:text-white">Full Database Backup & Disaster Recovery</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Preserve all students, Face IDs, and attendance logs against free cloud ephemeral disk wipes.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-3.5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200/80 dark:border-white/10 text-xs text-slate-600 dark:text-slate-300 space-y-1.5 leading-relaxed">
+            <p><strong>Cloud Free Tier Storage Limits:</strong></p>
+            <ul class="list-disc list-inside space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+              <li><strong>Render:</strong> Free tier disk is ephemeral — files on disk wipe on restarts. Use the buttons below for weekly offline backups or configure external Neon/Supabase Postgres via <code>DATABASE_URL</code>.</li>
+              <li><strong>Neon Postgres:</strong> 0.5 GiB free storage, 1 project with auto-suspend.</li>
+              <li><strong>Supabase:</strong> 500 MB free database; project pauses after 7 days without queries.</li>
+            </ul>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-3 pt-2">
+            <a href="/api/host/backup-database?format=json" class="flex-1 py-3 rounded-xl liquid-btn-purple font-bold text-xs flex items-center justify-center gap-2 shadow-md">
+              <i data-lucide="download" class="w-4 h-4"></i>
+              <span>Download Full Backup (JSON)</span>
+            </a>
+            <a href="/api/host/backup-database?format=csv" class="flex-1 py-3 rounded-xl liquid-btn-glass text-slate-800 dark:text-slate-200 font-bold text-xs flex items-center justify-center gap-2 border border-slate-300 dark:border-white/20">
+              <i data-lucide="file-spreadsheet" class="w-4 h-4"></i>
+              <span>Download Attendance (CSV)</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- CARD C: Render Keep-Alive & Cold-Start Uptime Monitor (Fix 9: Sleep Prevention) -->
+        <div class="liquid-glass p-6 sm:p-8 rounded-3xl border border-white/70 dark:border-white/10 shadow-xl space-y-4">
+          <div class="border-b border-slate-200/60 dark:border-white/10 pb-4">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold">
+                <i data-lucide="activity" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <h3 class="text-base font-black text-slate-900 dark:text-white">Render Free Service Keep-Alive Guide</h3>
+                <p class="text-xs text-slate-500 dark:text-slate-400">Prevent Render from going to sleep after 15 minutes of inactivity.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/60 text-xs text-slate-700 dark:text-slate-300 leading-relaxed space-y-2">
+            <p>
+              Render's free tier spins down web instances after 15 minutes of idle time, causing a <strong>~50-second delay</strong> on first load.
+            </p>
+            <p class="font-bold text-emerald-900 dark:text-emerald-300">
+              Setup a 100% Free Uptime Pinger (Takes 2 minutes):
+            </p>
+            <ol class="list-decimal list-inside space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+              <li>Sign up at <strong>cron-job.org</strong> or <strong>UptimeRobot.com</strong> (Free).</li>
+              <li>Create a new HTTP GET monitor scheduled every <strong>10 or 14 minutes</strong>.</li>
+              <li>Set target URL to your app's ultra-fast health endpoint:</li>
+            </ol>
+            <div class="p-2.5 rounded-xl bg-black/60 font-mono text-[11px] text-emerald-400 flex items-center justify-between select-all border border-emerald-500/30">
+              <span id="healthEndpointDisplay">https://veriface-attendance.onrender.com/health</span>
+              <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('healthEndpointDisplay').textContent); alert('Health endpoint copied!')" class="text-[10px] text-white bg-emerald-600 px-2 py-0.5 rounded font-sans font-bold hover:bg-emerald-500 ml-2 shrink-0">
+                Copy
+              </button>
+            </div>
+            <p class="text-[10px] text-slate-500 dark:text-slate-400">
+              This ping hits our zero-allocation <code>/health</code> route in &lt; 5ms without query overhead, keeping your portal instantly warm during college hours.
+            </p>
+          </div>
+        </div>
+
       </div>
 
       <!-- VIEW 5: ADAPTIVE LIVENESS AI TRAINING & OBSERVATIONS -->

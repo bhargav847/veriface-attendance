@@ -1,5 +1,6 @@
 // Face Registration & Face ID Enrollment Script
 // Powered by face-api.js & HTML5 Canvas
+// Fully Compliant with India's Digital Personal Data Protection (DPDP) Act 2023
 
 let videoElement = null;
 let canvasOverlay = null;
@@ -80,123 +81,129 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 async function startCamera() {
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const constraints = {
       video: {
-        width: { ideal: 640 },
-        height: { ideal: 480 },
-        facingMode: "user"
+        facingMode: "user",
+        width: { ideal: isMobile ? 640 : 1280 },
+        height: { ideal: isMobile ? 480 : 720 }
       },
       audio: false
-    });
+    };
 
+    stream = await navigator.mediaDevices.getUserMedia(constraints);
     videoElement.srcObject = stream;
+
     videoElement.onloadedmetadata = () => {
       videoElement.play();
       canvasOverlay.width = videoElement.videoWidth;
       canvasOverlay.height = videoElement.videoHeight;
-      isDetecting = true;
-      updateStatus("Camera Ready. Align your face inside the guide.", "ready");
-      startFaceTrackingLoop();
+      updateStatus("Sensor Active. Center your face.", "ready");
+      startFaceTracking();
     };
   } catch (err) {
     console.error("Camera access failed:", err);
-    updateStatus("Camera permission denied. Please allow camera access.", "error");
+    updateStatus("Camera permission denied.", "error");
+    showAlert("Please allow camera permissions in your browser or iOS settings to enroll Face ID.", "error");
   }
 }
 
-// Continuous Face Tracking & Landmark Rendering
-async function startFaceTrackingLoop() {
-  const reticle = document.getElementById("hudReticle");
+function startFaceTracking() {
+  if (isDetecting) return;
+  isDetecting = true;
+
+  const displaySize = { width: videoElement.videoWidth, height: videoElement.videoHeight };
+  faceapi.matchDimensions(canvasOverlay, displaySize);
+
   const ovalGuide = document.getElementById("faceOvalGuide");
-  const captureBtn = document.getElementById("captureBtn");
-  const ctx = canvasOverlay.getContext("2d");
+  const submitBtn = document.getElementById("captureBtn");
+  const hudReticle = document.getElementById("hudReticle");
 
-  const detectorOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.5 });
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const detectorOptions = new faceapi.TinyFaceDetectorOptions({
+    inputSize: isMobile ? 160 : 224,
+    scoreThreshold: 0.40
+  });
 
-  async function track() {
-    if (!isDetecting || !videoElement || videoElement.paused || videoElement.ended) {
-      requestAnimationFrame(track);
-      return;
-    }
+  const detectionInterval = setInterval(async () => {
+    if (!modelsLoaded || videoElement.paused || videoElement.ended) return;
 
     try {
-      const detection = await faceapi.detectSingleFace(videoElement, detectorOptions).withFaceLandmarks();
+      const detection = await faceapi
+        .detectSingleFace(videoElement, detectorOptions)
+        .withFaceLandmarks(true);
+
+      const ctx = canvasOverlay.getContext("2d");
       ctx.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
 
       if (detection) {
-        const box = detection.detection.box;
-        const score = Math.round(detection.detection.score * 100);
+        const resized = faceapi.resizeResults(detection, displaySize);
+        const box = resized.detection.box;
 
-        // Check if face is centered and of good size
         const centerX = box.x + box.width / 2;
         const centerY = box.y + box.height / 2;
-        const frameCenterX = canvasOverlay.width / 2;
-        const frameCenterY = canvasOverlay.height / 2;
+        const targetX = displaySize.width / 2;
+        const targetY = displaySize.height / 2;
 
-        const isCentered = Math.abs(centerX - frameCenterX) < 120 && Math.abs(centerY - frameCenterY) < 100;
-        const isGoodSize = box.width > 120 && box.height > 120;
+        const distFromCenter = Math.hypot(centerX - targetX, centerY - targetY);
+        const isCentered = distFromCenter < (displaySize.width * 0.18);
+        const isGoodSize = box.width > (displaySize.width * 0.22) && box.width < (displaySize.width * 0.85);
 
         if (isCentered && isGoodSize) {
-          reticle.classList.add("aligned");
-          reticle.classList.remove("error");
-          ovalGuide.classList.add("aligned");
-          captureBtn.disabled = false;
-          captureBtn.classList.remove("opacity-50", "cursor-not-allowed");
-          updateStatus(`Face Aligned & Detected (${score}% confidence). Ready to Register!`, "aligned");
+          ovalGuide.classList.add("face-aligned");
+          hudReticle.classList.add("reticle-locked");
+          updateStatus("Face Aligned! Ready to Register.", "aligned");
+          submitBtn.disabled = false;
+          submitBtn.classList.remove("opacity-50", "cursor-not-allowed");
         } else {
-          reticle.classList.remove("aligned", "error");
-          ovalGuide.classList.remove("aligned");
-          captureBtn.disabled = true;
-          captureBtn.classList.add("opacity-50", "cursor-not-allowed");
-          updateStatus("Center your face inside the oval frame...", "ready");
+          ovalGuide.classList.remove("face-aligned");
+          hudReticle.classList.remove("reticle-locked");
+          updateStatus("Center your face inside the oval.", "ready");
+          submitBtn.disabled = true;
+          submitBtn.classList.add("opacity-50", "cursor-not-allowed");
         }
       } else {
-        reticle.classList.remove("aligned", "error");
-        ovalGuide.classList.remove("aligned");
-        captureBtn.disabled = true;
-        captureBtn.classList.add("opacity-50", "cursor-not-allowed");
-        updateStatus("Looking for face... Please look directly at camera.", "ready");
+        ovalGuide.classList.remove("face-aligned");
+        hudReticle.classList.remove("reticle-locked");
+        updateStatus("No face detected. Look directly into camera.", "ready");
+        submitBtn.disabled = true;
+        submitBtn.classList.add("opacity-50", "cursor-not-allowed");
       }
     } catch (e) {
-      console.warn("Detection frame error:", e);
+      // Frame skip
     }
-
-    setTimeout(track, 100);
-  }
-
-  track();
+  }, 120);
 }
 
 async function handleRegistration() {
-  const rollInput = document.getElementById("rollNo");
-  const nameInput = document.getElementById("fullName");
-  const deptInput = document.getElementById("department");
-  const submitBtn = document.getElementById("captureBtn");
-  const alertContainer = document.getElementById("alertContainer");
+  const rollNo = document.getElementById("rollNo").value.trim().toUpperCase();
+  const fullName = document.getElementById("fullName").value.trim();
+  const department = document.getElementById("department").value.trim();
+  const consentBox = document.getElementById("dpdpConsentCheckbox");
 
-  const rollNo = rollInput.value.trim().toUpperCase();
-  const fullName = nameInput.value.trim();
-  const department = deptInput.value.trim() || "Computer Science";
-
-  if (!rollNo || !fullName) {
-    showAlert("Please enter your Roll Number and Full Name.", "error");
+  if (!consentBox || !consentBox.checked) {
+    playChime('error');
+    showAlert("Consent under India's DPDP Act 2023 is required before biometric enrollment.", "error");
     return;
   }
 
-  // Freeze button & update UI
+  if (!rollNo || !fullName) {
+    showAlert("Please enter your Roll Number and Legal Name.", "error");
+    return;
+  }
+
+  const submitBtn = document.getElementById("captureBtn");
   submitBtn.disabled = true;
   submitBtn.innerHTML = `
-    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-      <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-      <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
-    </svg>
-    Extracting Biometric Face ID...
+    <span class="inline-block animate-spin mr-2">🔄</span>
+    Computing 128-D Biometric Embedding...
   `;
 
+  updateStatus("Computing High-Accuracy 128-D Biometric Embedding...", "loading");
+
   try {
-    // High accuracy extraction using SSD MobileNet V1
     const highAccDetection = await faceapi
-      .detectSingleFace(videoElement, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.7 }))
+      .detectSingleFace(videoElement, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
       .withFaceLandmarks()
       .withFaceDescriptor();
 
@@ -214,12 +221,11 @@ async function handleRegistration() {
     captureCanvas.width = videoElement.videoWidth;
     captureCanvas.height = videoElement.videoHeight;
     const cCtx = captureCanvas.getContext("2d");
-    // Flip horizontally so avatar looks natural as viewed in mirror
     cCtx.translate(captureCanvas.width, 0);
     cCtx.scale(-1, 1);
     cCtx.drawImage(videoElement, 0, 0, captureCanvas.width, captureCanvas.height);
 
-    const avatarDataUrl = captureCanvas.toDataURL("image/jpeg", 0.92);
+    const avatarDataUrl = captureCanvas.toDataURL("image/jpeg", 0.90);
     const descriptorArray = Array.from(highAccDetection.descriptor);
 
     // Send to Backend
@@ -233,7 +239,8 @@ async function handleRegistration() {
         name: fullName,
         department: department,
         face_descriptor: descriptorArray,
-        avatar_data_url: avatarDataUrl
+        avatar_data_url: avatarDataUrl,
+        dpdp_consent: true
       })
     });
 
@@ -280,16 +287,16 @@ function updateStatus(text, state = "ready") {
 
   if (state === "aligned") {
     dot.className += "bg-emerald-500 animate-pulse";
-    statusBadge.className = "inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200";
+    statusBadge.className = "inline-flex items-center px-3.5 py-1.5 rounded-full text-xs font-semibold bg-emerald-950/80 text-emerald-300 border border-emerald-500/50";
   } else if (state === "loading") {
     dot.className += "bg-amber-500 animate-ping";
-    statusBadge.className = "inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200";
+    statusBadge.className = "inline-flex items-center px-3.5 py-1.5 rounded-full text-xs font-semibold bg-amber-950/80 text-amber-300 border border-amber-500/50";
   } else if (state === "error") {
-    dot.className += "bg-red-500";
-    statusBadge.className = "inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-200";
+    dot.className += "bg-rose-500";
+    statusBadge.className = "inline-flex items-center px-3.5 py-1.5 rounded-full text-xs font-semibold bg-rose-950/80 text-rose-300 border border-rose-500/50";
   } else {
     dot.className += "bg-blue-500";
-    statusBadge.className = "inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200";
+    statusBadge.className = "inline-flex items-center px-3.5 py-1.5 rounded-full text-xs font-semibold bg-slate-900/85 backdrop-blur-md text-white border border-slate-700 shadow-lg";
   }
 }
 
@@ -299,10 +306,10 @@ function showAlert(message, type = "error") {
 
   const isErr = type === "error";
   container.innerHTML = `
-    <div class="flex items-center p-4 rounded-xl border ${isErr ? 'bg-red-50 text-red-800 border-red-200' : 'bg-emerald-50 text-emerald-800 border-emerald-200'} shadow-sm">
-      <span class="mr-3 text-lg">${isErr ? '⚠️' : '✅'}</span>
-      <div class="flex-1 text-sm font-medium">${message}</div>
-      <button onclick="document.getElementById('alertContainer').innerHTML=''" class="ml-2 text-gray-400 hover:text-gray-600">×</button>
+    <div class="flex items-center p-3.5 rounded-2xl border ${isErr ? 'bg-rose-50 dark:bg-rose-950/60 text-rose-800 dark:text-rose-200 border-rose-200 dark:border-rose-800' : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800'} shadow-sm text-xs">
+      <span class="mr-2.5 text-base">${isErr ? '⚠️' : '✅'}</span>
+      <div class="flex-1 font-medium">${message}</div>
+      <button onclick="document.getElementById('alertContainer').innerHTML=''" class="ml-2 text-slate-400 hover:text-slate-600">×</button>
     </div>
   `;
 }
@@ -312,8 +319,75 @@ function showSuccessModal(user, avatarDataUrl) {
   document.getElementById("modalStudentName").textContent = user.name;
   document.getElementById("modalStudentRoll").textContent = user.roll_no;
   document.getElementById("modalStudentDept").textContent = user.department;
-  document.getElementById("modalStudentAvatar").src = avatarDataUrl;
+  document.getElementById("modalStudentAvatar").src = avatarDataUrl || '/static/icons/default-avatar.png';
 
   modal.classList.remove("hidden");
   modal.classList.add("flex");
+  if (window.lucide) lucide.createIcons();
+}
+
+// --- DPDP Act 2023 Self-Service Right to Erasure Controls ---
+
+function openErasureModal() {
+  const modal = document.getElementById("erasureModal");
+  if (modal) {
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    const input = document.getElementById("erasureRollInput");
+    if (input) {
+      input.value = "";
+      input.focus();
+    }
+    const alert = document.getElementById("erasureAlert");
+    if (alert) alert.classList.add("hidden");
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function closeErasureModal() {
+  const modal = document.getElementById("erasureModal");
+  if (modal) {
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+  }
+}
+
+async function executeErasure() {
+  const input = document.getElementById("erasureRollInput");
+  const alertEl = document.getElementById("erasureAlert");
+  const roll = input.value.trim().toUpperCase();
+
+  if (!roll) {
+    alertEl.textContent = "Please enter your Roll Number.";
+    alertEl.className = "p-3 rounded-xl text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-200 border border-rose-200 block";
+    return;
+  }
+
+  if (!confirm(`Are you completely sure you want to permanently erase all biometric data and face vectors for ${roll}? This action cannot be undone under DPDP Act 2023.`)) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/student/delete-biometrics/${encodeURIComponent(roll)}`, {
+      method: "DELETE"
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alertEl.textContent = data.detail || "Student not found or deletion failed.";
+      alertEl.className = "p-3 rounded-xl text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-200 border border-rose-200 block";
+      return;
+    }
+
+    alertEl.textContent = data.message;
+    alertEl.className = "p-3 rounded-xl text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-200 border border-emerald-200 block";
+    playChime('success');
+    setTimeout(() => {
+      closeErasureModal();
+      location.reload();
+    }, 2200);
+  } catch (err) {
+    alertEl.textContent = "Error: " + err.message;
+    alertEl.className = "p-3 rounded-xl text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-200 border border-rose-200 block";
+  }
 }

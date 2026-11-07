@@ -58,6 +58,10 @@
           <i data-lucide="camera" class="w-4 h-4"></i>
           <span class="hidden sm:inline">Check-in</span>
         </a>
+        <a href="#attendanceCalendarSection" onclick="scrollToCalendarSection(event)" class="liquid-btn-glass px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold text-emerald-600 dark:text-emerald-400 border-emerald-200/50 dark:border-emerald-500/30 flex items-center gap-1.5" title="My Attendance Calendar">
+          <i data-lucide="calendar-days" class="w-4 h-4 text-emerald-600 dark:text-emerald-400"></i>
+          <span>My Calendar</span>
+        </a>
         <a href="/register" class="liquid-btn-glass px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5" title="Register Face ID">
           <i data-lucide="user-plus" class="w-4 h-4"></i>
           <span class="hidden md:inline">Register</span>
@@ -128,6 +132,12 @@
                 <span class="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1 animate-ping"></span> GPS...
               </span>
             </div>
+
+            <!-- Real-Time On-Screen Lighting Tips (Fix 4: Low-End Phone & Illumination Detection) -->
+            <div id="lightingHUD" class="pointer-events-auto inline-flex items-center px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-semibold bg-slate-900/90 backdrop-blur-md text-emerald-300 border border-emerald-500/40 shadow-md">
+              <span id="lightingIcon" class="mr-1 text-xs">💡</span>
+              <span id="lightingText" class="truncate max-w-[130px] sm:max-w-none">Lighting: Good</span>
+            </div>
           </div>
 
           <!-- Bottom-Right Empirical Benchmark Throughput (FPS & Latency) -->
@@ -161,6 +171,25 @@
           <button type="button" onclick="initHighAccuracyGeolocation()" class="shrink-0 px-3 py-1 rounded-xl liquid-btn-glass text-blue-600 dark:text-blue-400 font-bold text-[11px] flex items-center gap-1 ml-2">
             <i data-lucide="crosshair" class="w-3 h-3"></i> Refine GPS
           </button>
+        </div>
+
+        <!-- Offline Queue Auto-Sync Banner (Fix 6: Weak Campus Wi-Fi) -->
+        <div id="offlineSyncBanner" class="hidden mt-3 w-full max-w-2xl p-3 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-800/60 text-xs text-amber-900 dark:text-amber-200 flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-amber-500 animate-ping"></span>
+            <span><strong id="offlineCount">1</strong> attendance check-in queued offline. Auto-syncing when campus Wi-Fi reconnects...</span>
+          </div>
+          <button onclick="flushOfflineCheckinQueue()" class="px-2.5 py-1 rounded-lg bg-amber-500 text-slate-950 font-bold text-[11px] shadow-sm">
+            Sync Now
+          </button>
+        </div>
+
+        <!-- iPhone Safari Guidance Banner (Fix 7: Safari camera permissions & PWA quirks) -->
+        <div id="safariHelpBanner" class="hidden mt-3 w-full max-w-2xl p-3 rounded-2xl bg-sky-50/80 dark:bg-sky-950/40 border border-sky-300/60 dark:border-sky-800/60 text-xs text-sky-900 dark:text-sky-200 flex items-start gap-2.5">
+          <i data-lucide="info" class="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5"></i>
+          <div>
+            <strong>iPhone / Safari Camera Tip:</strong> If your camera shows a black screen or prompts repeatedly, tap the <strong>'aA'</strong> icon in your Safari address bar &rarr; select <strong>Website Settings</strong> &rarr; set <strong>Camera</strong> to <strong>Allow</strong>.
+          </div>
         </div>
 
         <div class="mt-3 flex items-center justify-between w-full max-w-2xl px-2 text-xs text-slate-500 dark:text-slate-400">
@@ -307,6 +336,168 @@
 
     </div>
 
+    <!-- =========================================================================
+         INTERACTIVE STUDENT ATTENDANCE CALENDAR & CLASS SCHEDULE PREVIEW
+         ========================================================================= -->
+    <section id="attendanceCalendarSection" class="mt-10 w-full liquid-glass rounded-3xl p-6 sm:p-8 border border-white/70 dark:border-white/10 shadow-xl scroll-mt-20">
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200/60 dark:border-white/10 pb-5 mb-6">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+            <h2 class="text-xl font-black text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
+              <i data-lucide="calendar-days" class="w-6 h-6 text-emerald-600 dark:text-emerald-400"></i>
+              Student Attendance Calendar & Class Schedule
+            </h2>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Visual month calendar preview. Click any date on the calendar grid to see which classes you attended on that day.
+          </p>
+        </div>
+
+        <!-- Student Roll Lookup Bar -->
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div class="relative">
+            <input 
+              type="text" 
+              id="mainCalRollInput" 
+              placeholder="Enter Roll No (e.g. 25021A0520)" 
+              class="w-full sm:w-64 pl-9 pr-3 py-2.5 rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-xs font-mono font-bold uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none"></i>
+          </div>
+          <button 
+            type="button" 
+            onclick="loadStudentCalendarByRoll(document.getElementById('mainCalRollInput').value)" 
+            class="liquid-btn-emerald px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm"
+          >
+            <span>View Calendar</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Roll Chips for 1-Tap Access -->
+      <div class="flex items-center gap-2 mb-6 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
+        <span class="font-semibold text-[11px] uppercase tracking-wider">Quick Select:</span>
+        <button type="button" onclick="selectQuickRoll('25021A0520')" class="px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 transition-all flex items-center gap-1">
+          <span>👤 Bhargav Kalla</span>
+          <span class="text-slate-400 font-normal">(25021A0520)</span>
+        </button>
+        <button type="button" onclick="selectQuickRoll('STU-6120')" class="px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 transition-all flex items-center gap-1">
+          <span>👤 Jane Doe</span>
+          <span class="text-slate-400 font-normal">(STU-6120)</span>
+        </button>
+      </div>
+
+      <!-- Student Profile Banner (Populated when loaded) -->
+      <div id="mainCalStudentBanner" class="hidden mb-6 p-4 rounded-2xl bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/40 border border-emerald-200/70 dark:border-emerald-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shadow-md shrink-0 overflow-hidden" id="mainCalAvatar">?</div>
+          <div>
+            <div class="text-base font-black text-slate-900 dark:text-white" id="mainCalStudentName">Student Name</div>
+            <div class="flex items-center gap-2 text-xs font-mono text-emerald-700 dark:text-emerald-300 mt-0.5">
+              <span id="mainCalStudentRoll" class="font-bold">ROLL-NO</span>
+              <span>•</span>
+              <span id="mainCalDepartment" class="font-sans font-medium text-slate-500 dark:text-slate-400">Department</span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-4 text-right">
+          <div class="p-2.5 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-white/80 dark:border-white/10 shadow-sm">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Classes Attended</span>
+            <span class="text-base font-black text-emerald-600 dark:text-emerald-400" id="mainCalAttendedCount">0 / 0</span>
+          </div>
+          <div class="p-2.5 rounded-xl bg-white/70 dark:bg-slate-800/70 border border-white/80 dark:border-white/10 shadow-sm">
+            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Attendance Rate</span>
+            <span class="text-base font-black text-blue-600 dark:text-blue-400" id="mainCalRate">0%</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Two-Column Layout: Visual Calendar Grid (Left) + Selected Day Class Details (Right) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        <!-- Left: Month Calendar Matrix -->
+        <div class="lg:col-span-7 p-4 sm:p-5 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10 shadow-sm">
+          
+          <!-- Month & Year Navigation Header -->
+          <div class="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/60 dark:border-white/10">
+            <h3 class="text-base font-black text-slate-900 dark:text-white flex items-center gap-2" id="calMonthYearTitle">
+              November 2026
+            </h3>
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="changeCalendarMonth(-1)" class="w-8 h-8 rounded-xl liquid-btn-glass flex items-center justify-center text-slate-700 dark:text-slate-200 font-bold hover:text-emerald-600" title="Previous Month">
+                ‹
+              </button>
+              <button type="button" onclick="jumpToCurrentMonth()" class="px-2.5 py-1 rounded-xl liquid-btn-glass text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                Today
+              </button>
+              <button type="button" onclick="changeCalendarMonth(1)" class="w-8 h-8 rounded-xl liquid-btn-glass flex items-center justify-center text-slate-700 dark:text-slate-200 font-bold hover:text-emerald-600" title="Next Month">
+                ›
+              </button>
+            </div>
+          </div>
+
+          <!-- Day of Week Headers -->
+          <div class="grid grid-cols-7 gap-1 text-center font-bold text-[11px] text-slate-400 uppercase tracking-wider mb-2">
+            <div>Sun</div>
+            <div>Mon</div>
+            <div>Tue</div>
+            <div>Wed</div>
+            <div>Thu</div>
+            <div>Fri</div>
+            <div>Sat</div>
+          </div>
+
+          <!-- Calendar Days Grid -->
+          <div class="grid grid-cols-7 gap-1.5" id="calGridDaysContainer">
+            <div class="col-span-7 py-12 text-center text-slate-400 text-xs">
+              Enter a Roll Number above to generate the visual attendance calendar.
+            </div>
+          </div>
+
+          <!-- Legend -->
+          <div class="mt-4 pt-3 border-t border-slate-200/60 dark:border-white/10 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 flex-wrap gap-2">
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+              <span>Attended Class (Present)</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+              <span>Flagged Proxy</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+              <span>Rejected / Mismatch</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-2.5 h-2.5 rounded-full border border-blue-500"></span>
+              <span>Today</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Selected Day Class Inspection Panel -->
+        <div class="lg:col-span-5 p-4 sm:p-5 rounded-2xl bg-white/60 dark:bg-slate-800/60 border border-white/80 dark:border-white/10 shadow-sm flex flex-col min-h-[350px]">
+          <div class="border-b border-slate-200/60 dark:border-white/10 pb-3 mb-3 flex items-center justify-between">
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Classes on Date</span>
+              <h4 class="text-sm font-black text-slate-900 dark:text-white" id="calSelectedDateTitle">Select a date</h4>
+            </div>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono" id="calSelectedDayClassCount">
+              0 Classes
+            </span>
+          </div>
+
+          <div class="flex-1 overflow-y-auto space-y-2.5 pr-0.5 max-h-[340px]" id="calSelectedDayDetailsList">
+            <div class="text-center py-16 text-slate-400 text-xs">
+              Click any date with a green indicator on the calendar to view which classes were attended on that day.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
   </main>
 
   <!-- Verified Attendance Modal / Digital Receipt -->
@@ -398,8 +589,8 @@
 
       <!-- Footer Buttons -->
       <div class="px-6 py-4 bg-white/70 dark:bg-slate-800/80 border-t border-white/80 dark:border-white/10 flex items-center justify-between">
-        <button onclick="window.print()" class="liquid-btn-glass px-4 py-2 text-xs font-semibold flex items-center gap-1.5">
-          <i data-lucide="printer" class="w-3.5 h-3.5"></i> Print Pass
+        <button onclick="viewCalendarForCurrentStudent()" class="liquid-btn-glass px-4 py-2 text-xs font-semibold flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+          <i data-lucide="calendar" class="w-3.5 h-3.5"></i> My History
         </button>
         <button onclick="closeResultModal()" class="liquid-btn-primary px-5 py-2 text-xs font-bold">
           Done
@@ -423,11 +614,89 @@
         <div class="text-slate-500 dark:text-slate-400 mt-1">Status: <span id="alreadyStatus" class="font-bold text-emerald-600 dark:text-emerald-400"></span></div>
       </div>
 
-      <button onclick="closeAlreadyMarkedModal()" class="w-full py-2.5 rounded-xl liquid-btn-primary text-xs font-bold transition-all">
-        Acknowledge
-      </button>
+      <div class="flex gap-2">
+        <button onclick="viewCalendarForCurrentStudent()" class="w-1/2 py-2.5 rounded-xl liquid-btn-emerald text-xs font-bold transition-all flex items-center justify-center gap-1">
+          <i data-lucide="calendar" class="w-3.5 h-3.5"></i> My History
+        </button>
+        <button onclick="closeAlreadyMarkedModal()" class="w-1/2 py-2.5 rounded-xl liquid-btn-primary text-xs font-bold transition-all">
+          Acknowledge
+        </button>
+      </div>
     </div>
   </div>
+
+  <!-- Student Attendance History & Calendar Preview Modal -->
+  <div id="studentCalendarModal" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/80 backdrop-blur-md hidden items-center justify-center p-3 sm:p-4">
+    <div class="liquid-glass rounded-3xl max-w-2xl w-full p-5 sm:p-7 shadow-2xl border border-white/70 dark:border-white/20 flex flex-col max-h-[90vh]">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-slate-200/60 dark:border-white/10 pb-4 mb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center text-white shadow-md">
+            <i data-lucide="calendar-check-2" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-black text-slate-900 dark:text-white tracking-tight">Student Attendance & Class History</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400">View which classes you attended on each day</p>
+          </div>
+        </div>
+        <button onclick="closeStudentCalendarModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white">✕</button>
+      </div>
+
+      <!-- Roll Number Lookup Bar -->
+      <div class="flex gap-2 mb-4">
+        <input 
+          type="text" 
+          id="calLookupRollInput" 
+          placeholder="Enter Roll Number (e.g. 21CS045)" 
+          class="flex-1 px-4 py-2.5 rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-xs font-mono font-bold uppercase focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        />
+        <button onclick="loadStudentCalendarData()" class="liquid-btn-emerald px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm">
+          <i data-lucide="search" class="w-3.5 h-3.5"></i>
+          <span>Lookup</span>
+        </button>
+      </div>
+
+      <!-- Student Summary Banner -->
+      <div id="calStudentBanner" class="hidden mb-4 p-3.5 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/60 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold text-sm" id="calStudentAvatar">?</div>
+          <div>
+            <div class="text-xs font-black text-slate-900 dark:text-white" id="calStudentName">Student Name</div>
+            <div class="text-[11px] font-mono text-emerald-700 dark:text-emerald-300" id="calStudentRoll">STU-000</div>
+          </div>
+        </div>
+        <div class="text-right">
+          <span class="text-[10px] uppercase font-bold text-slate-400 block">Classes Attended</span>
+          <span class="text-sm font-black text-emerald-600 dark:text-emerald-400" id="calAttendedCount">0 / 0</span>
+        </div>
+      </div>
+
+      <!-- Scrollable History List -->
+      <div class="flex-1 overflow-y-auto space-y-2.5 pr-1" id="calHistoryList">
+        <div class="text-center py-10 text-slate-400 text-xs">
+          Enter your Roll Number above to view all attended lectures and dates.
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="mt-4 pt-3 border-t border-slate-200/60 dark:border-white/10 flex justify-end">
+        <button onclick="closeStudentCalendarModal()" class="liquid-btn-glass px-4 py-2 rounded-xl text-xs font-bold">
+          Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Bottom Utility Footer -->
+  <footer class="mt-auto py-4 text-center text-[11px] text-slate-400 dark:text-slate-500 flex items-center justify-center gap-3 relative z-10">
+    <span>VeriFace Biometric System</span>
+    <span>•</span>
+    <a href="/?mode=plain" onclick="sessionStorage.setItem('plain_mode', 'true')" class="hover:text-blue-500 transition-colors">Plain Browser Mode (Zero Cache / iOS Safari)</a>
+    <span>•</span>
+    <a href="/register" class="hover:text-blue-500 transition-colors">DPDP Act Biometric Rights</a>
+  </footer>
 
   <!-- Lucide icons trigger -->
   <script>

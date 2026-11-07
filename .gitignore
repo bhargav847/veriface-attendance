@@ -7,3 +7,7 @@ __pycache__/
 env/
 venv/
 attendance.db
+static/uploads/avatars/*.jpg
+static/uploads/snapshots/*.jpg
+!static/uploads/avatars/.gitkeep
+!static/uploads/snapshots/.gitkeep

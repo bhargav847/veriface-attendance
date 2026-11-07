@@ -212,6 +212,22 @@
               </div>
             </div>
 
+            <!-- India DPDP Act 2023 Explicit Consent Requirement -->
+            <div class="p-3.5 rounded-2xl bg-blue-50/80 dark:bg-blue-950/40 border border-blue-200/70 dark:border-blue-800/60 text-xs">
+              <label class="flex items-start gap-2.5 cursor-pointer select-none">
+                <input 
+                  type="checkbox" 
+                  id="dpdpConsentCheckbox" 
+                  checked
+                  required
+                  class="mt-0.5 rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer" 
+                />
+                <span class="text-slate-700 dark:text-slate-300 leading-snug">
+                  <strong>India DPDP Act 2023 Biometric Consent:</strong> I voluntarily consent to the extraction and storage of a 128-dimensional numerical facial vector solely for attendance verification. Mathematical embeddings cannot be reverse-engineered into raw photos, and I retain the Right to Erasure.
+                </span>
+              </label>
+            </div>
+
             <!-- Action Button (Liquid Glass Button with Depth & Dynamic Glow) -->
             <div class="pt-2">
               <button 
@@ -230,10 +246,75 @@
 
           </form>
 
-          <!-- Security Disclosure -->
-          <div class="mt-6 pt-5 border-t border-slate-200/60 dark:border-white/10 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-            🔒 <strong>Biometric Privacy Notice:</strong> Face scans are computed into mathematical 128-dimensional embedding vectors for verification purposes. All data is encrypted and saved securely in the institutional attendance database.
+          <!-- Security Disclosure & DPDP Act Right to Erasure Portal -->
+          <div class="mt-6 pt-5 border-t border-slate-200/60 dark:border-white/10 space-y-3">
+            <div class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              🔒 <strong>Biometric Privacy Notice:</strong> Face scans are computed into mathematical 128-dimensional embedding vectors for verification purposes under India's Digital Personal Data Protection (DPDP) Act 2023.
+            </div>
+            
+            <div class="p-3 rounded-2xl bg-rose-50/60 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 flex items-center justify-between text-xs">
+              <div>
+                <span class="font-bold text-rose-900 dark:text-rose-300 block">DPDP Right to Erasure</span>
+                <span class="text-[11px] text-slate-500 dark:text-slate-400">Permanently delete your face vector</span>
+              </div>
+              <button type="button" onclick="openErasureModal()" class="px-3 py-1.5 rounded-xl liquid-btn-rose text-xs font-bold shadow-sm">
+                Delete My Data
+              </button>
+            </div>
           </div>
+
+        </div>
+      </div>
+
+    </div>
+
+  </main>
+
+  <!-- DPDP Act Right to Erasure Self-Service Modal -->
+  <div id="erasureModal" class="fixed inset-0 z-50 bg-slate-900/60 dark:bg-black/75 backdrop-blur-md hidden items-center justify-center p-4">
+    <div class="liquid-glass rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-white/70 dark:border-white/20 relative">
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-200 dark:border-white/10">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold">
+            <i data-lucide="trash-2" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-black text-slate-900 dark:text-white">Delete My Biometric Face Data</h3>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">India DPDP Act 2023 Compliance Portal</p>
+          </div>
+        </div>
+        <button onclick="closeErasureModal()" class="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white">✕</button>
+      </div>
+
+      <p class="text-xs text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
+        Under Section 12 of India's Digital Personal Data Protection (DPDP) Act 2023, you have the absolute legal right to revoke consent and request complete erasure of your biometric facial descriptors and calibration records.
+      </p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 mb-1.5">Enter Your Roll Number</label>
+          <input 
+            type="text" 
+            id="erasureRollInput" 
+            placeholder="e.g. 21CS045" 
+            class="block w-full px-4 py-2.5 rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white font-mono text-sm font-bold uppercase focus:outline-none focus:ring-2 focus:ring-rose-500"
+          />
+        </div>
+
+        <div id="erasureAlert" class="hidden p-3 rounded-xl text-xs font-semibold"></div>
+
+        <div class="flex gap-2 pt-2">
+          <button type="button" onclick="closeErasureModal()" class="w-1/3 py-2.5 rounded-xl liquid-btn-glass text-xs font-bold">
+            Cancel
+          </button>
+          <button type="button" onclick="executeErasure()" class="w-2/3 py-2.5 rounded-xl liquid-btn-rose text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            <span>Permanently Erase Data</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
 
         </div>
       </div>

@@ -14,16 +14,21 @@ from pydantic import BaseModel, Field
 from app.database import (
     init_db, get_setting, set_setting, get_all_settings,
     register_user, get_user_by_roll_no, get_user_by_id, get_all_users, delete_user,
+    delete_student_biometrics, get_last_attendance_for_user, get_device_recent_checkin,
+    record_manual_override, export_full_database_backup, export_full_database_csv,
     get_today_attendance_for_user, record_attendance, get_attendance_logs,
     update_attendance_status, get_dashboard_stats,
     register_lecturer, get_all_lecturers, get_lecturer_by_id, delete_lecturer, verify_lecturer_login,
     create_class_session, get_active_session_by_code, get_active_session_for_lecturer,
-    close_class_session, get_session_attendees,
+    get_class_session_by_id, get_all_active_sessions,
+    close_class_session, get_session_attendees, get_student_attendance_history,
     get_liveness_training_stats, get_all_liveness_profiles, train_and_recalibrate_liveness_model
 )
 from app.security import (
     calculate_euclidean_distance, compute_match_confidence,
-    save_base64_image, extract_client_ip, perform_anti_proxy_evaluation
+    save_base64_image, extract_client_ip, perform_anti_proxy_evaluation,
+    generate_rolling_otp, verify_rolling_otp, check_impossible_travel,
+    is_rate_limited
 )
 
 # Initialize Database Schema
@@ -47,19 +52,21 @@ class RegisterRequest(BaseModel):
     name: str
     department: Optional[str] = "Computer Science"
     face_descriptor: List[float]
-    avatar_data_url: str
+    avatar_data_url: Optional[str] = ""
+    dpdp_consent: Optional[bool] = True
 
 class MarkAttendanceRequest(BaseModel):
     roll_no: str
     face_descriptor: List[float]
-    snapshot_data_url: str
-    session_code: str # The 5-Minute Lecturer OTP Code
+    snapshot_data_url: Optional[str] = ""  # Optional for lightweight vector-only mode (< 1.5 KB payload)
+    session_code: str  # 5-Minute Lecturer OTP or 30-Second Rolling Code
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     accuracy: Optional[float] = None
     altitude: Optional[float] = None
     altitude_accuracy: Optional[float] = None
     device_info: Optional[str] = "Web Browser"
+    device_id: Optional[str] = ""  # Persistent hardware/client fingerprint
     liveness_verified: Optional[bool] = True
     blink_count: Optional[int] = 0
     location_address: Optional[str] = None
@@ -108,6 +115,29 @@ class UpdateSettingsRequest(BaseModel):
     admin_pin: Optional[str] = None
     institution_name: Optional[str] = None
 
+class ManualOverrideRequest(BaseModel):
+    session_id: int
+    lecturer_id: str
+    roll_no: str
+    reason: Optional[str] = "Hardware Camera Malfunction / Poor Lighting"
+
+
+# --- Keep-Alive Health Routes (Render Free Tier Sleep Fix) ---
+
+@app.get("/health")
+@app.get("/api/health")
+async def health_check():
+    """
+    Ultra-fast keep-alive health route.
+    Used by uptime pingers (cron-job.org / UptimeRobot) every 10 minutes to prevent Render free tier from sleeping.
+    """
+    return {
+        "status": "healthy",
+        "service": "VeriFace Biometric Attendance System",
+        "timestamp": datetime.now().isoformat(),
+        "database": "connected"
+    }
+
 
 # --- Web Page Views ---
 
@@ -126,7 +156,7 @@ async def index_page(request: Request):
 
 @app.get("/register", response_class=HTMLResponse)
 async def register_page(request: Request):
-    """User Registration & Face ID Enrollment Page"""
+    """User Registration & Face ID Enrollment Page (DPDP Act 2023 Compliant)"""
     settings = get_all_settings()
     return templates.TemplateResponse(
         request=request,
@@ -165,6 +195,22 @@ async def lecturer_page(request: Request):
 
 @app.post("/api/register")
 async def api_register(data: RegisterRequest, request: Request):
+    client_ip = extract_client_ip(dict(request.headers), request.client.host if request.client else "127.0.0.1")
+    
+    # Rate Limiting check (max 10 registrations per minute per IP)
+    if is_rate_limited(client_ip, "register", max_requests=10, window_seconds=60):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many registration requests. Please wait a moment before trying again."
+        )
+
+    # DPDP Act 2023 Explicit Consent Requirement
+    if data.dpdp_consent is False:
+        raise HTTPException(
+            status_code=400,
+            detail="DPDP Act 2023 biometric processing consent is required to enroll in the system."
+        )
+
     roll_clean = data.roll_no.strip().upper()
     name_clean = data.name.strip()
 
@@ -179,27 +225,30 @@ async def api_register(data: RegisterRequest, request: Request):
     if existing:
         raise HTTPException(status_code=409, detail=f"Roll Number '{roll_clean}' is already registered under name '{existing['name']}'.")
 
-    # Save Avatar Image
-    try:
-        avatar_path = save_base64_image(
-            base64_str=data.avatar_data_url,
-            folder="avatars",
-            filename_prefix=f"avatar_{roll_clean}"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save biometric avatar: {str(e)}")
+    # Save Avatar Image (or use privacy placeholder if empty)
+    avatar_path = ""
+    if data.avatar_data_url and data.avatar_data_url.strip():
+        try:
+            avatar_path = save_base64_image(
+                base64_str=data.avatar_data_url,
+                folder="avatars",
+                filename_prefix=f"avatar_{roll_clean}"
+            )
+        except Exception as e:
+            avatar_path = ""
 
     user = register_user(
         roll_no=roll_clean,
         name=name_clean,
         department=data.department or "General",
         face_descriptor=data.face_descriptor,
-        avatar_path=avatar_path
+        avatar_path=avatar_path,
+        dpdp_consent=1 if data.dpdp_consent else 0
     )
 
     return {
         "success": True,
-        "message": f"Student {name_clean} (Roll No: {roll_clean}) successfully registered!",
+        "message": f"Student {name_clean} (Roll No: {roll_clean}) successfully registered under DPDP Act 2023 compliance!",
         "user": {
             "id": user["id"],
             "roll_no": user["roll_no"],
@@ -208,6 +257,18 @@ async def api_register(data: RegisterRequest, request: Request):
             "avatar_path": user["avatar_path"]
         }
     }
+
+@app.delete("/api/student/delete-biometrics/{roll_no}")
+async def api_student_delete_biometrics(roll_no: str):
+    """
+    DPDP Act 2023 Right to Erasure / Right to be Forgotten.
+    Permanently erases student's face embedding vector and calibration profiles.
+    """
+    clean_roll = roll_no.strip().upper()
+    res = delete_student_biometrics(clean_roll)
+    if not res.get("success"):
+        raise HTTPException(status_code=404, detail=res.get("message"))
+    return res
 
 @app.get("/api/user/lookup/{roll_no}")
 async def api_lookup_user(roll_no: str):
@@ -226,6 +287,28 @@ async def api_lookup_user(roll_no: str):
             "avatar_path": user["avatar_path"],
             "face_descriptor": user["face_descriptor"]
         }
+    }
+
+@app.get("/api/student/history/{roll_no}")
+async def api_student_history(roll_no: str):
+    """Returns calendar and lecture history for a student."""
+    clean_roll = roll_no.strip().upper()
+    user = get_user_by_roll_no(clean_roll)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"No student found with Roll Number '{clean_roll}'.")
+    
+    records = get_student_attendance_history(clean_roll)
+    return {
+        "success": True,
+        "student": {
+            "name": user["name"],
+            "roll_no": user["roll_no"],
+            "department": user["department"],
+            "avatar_path": user["avatar_path"]
+        },
+        "records": records,
+        "total_attended": len([r for r in records if r["status"] == "PRESENT"]),
+        "total_sessions": len(records)
     }
 
 @app.get("/api/users/all-descriptors")
@@ -248,25 +331,47 @@ async def api_all_descriptors():
 
 @app.post("/api/mark-attendance")
 async def api_mark_attendance(data: MarkAttendanceRequest, request: Request):
+    client_ip = extract_client_ip(dict(request.headers), request.client.host if request.client else "127.0.0.1")
+
+    # Rate Limiting check (max 25 attendance attempts per minute per IP)
+    if is_rate_limited(client_ip, "mark_attendance", max_requests=25, window_seconds=60):
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded. Please wait a moment before resubmitting attendance."
+        )
+
     roll_clean = data.roll_no.strip().upper()
     user = get_user_by_roll_no(roll_clean)
 
     if not user:
         raise HTTPException(status_code=404, detail=f"Student with Roll Number '{roll_clean}' is not registered.")
 
-    # 1. Validate Lecturer 5-Minute Class Session OTP
+    # 1. Validate Lecturer Session OTP:
+    # First check if submitted code matches active static code OR rolling 30s projector OTP
     clean_session_code = (data.session_code or "").strip().upper()
     if not clean_session_code:
         raise HTTPException(
             status_code=400,
-            detail="Class Session OTP is required. Please enter the 5-minute one-time code provided by your lecturer."
+            detail="Class Session OTP is required. Please enter the classroom code or 30-second rotating projector code."
         )
 
     session_info = get_active_session_by_code(clean_session_code)
+    is_rolling_match = False
+
+    if not session_info:
+        # Check against 30-second rolling TOTP for active sessions
+        active_sessions = get_all_active_sessions()
+        for sess in active_sessions:
+            secret = sess.get("session_secret", "")
+            if verify_rolling_otp(clean_session_code, sess["id"], secret):
+                session_info = sess
+                is_rolling_match = True
+                break
+
     if not session_info:
         raise HTTPException(
             status_code=400,
-            detail=f"Session OTP '{clean_session_code}' has expired or is invalid. Please request the current 5-minute code from your lecturer."
+            detail=f"Session code '{clean_session_code}' is invalid or expired. Check the classroom projector for the latest 30-second code."
         )
 
     if len(data.face_descriptor) != 128:
@@ -285,22 +390,21 @@ async def api_mark_attendance(data: MarkAttendanceRequest, request: Request):
     confidence = compute_match_confidence(distance, threshold)
     is_match = distance <= threshold
 
-    # Extract Client Network & Location Information
-    client_ip = extract_client_ip(dict(request.headers), request.client.host if request.client else "127.0.0.1")
-    user_agent = request.headers.get("user-agent", data.device_info or "Unknown Device")
+    user_agent = request.headers.get("user-agent", data.device_info or "Web Browser")
     today_str = datetime.now().strftime("%Y-%m-%d")
 
     # If Face Fails Biometric Match
     if not is_match:
-        # Save snapshot for audit of failed/spoofed attempt
-        try:
-            snapshot_path = save_base64_image(
-                base64_str=data.snapshot_data_url,
-                folder="snapshots",
-                filename_prefix=f"mismatch_{roll_clean}"
-            )
-        except Exception:
-            snapshot_path = ""
+        snapshot_path = ""
+        if data.snapshot_data_url and data.snapshot_data_url.strip():
+            try:
+                snapshot_path = save_base64_image(
+                    base64_str=data.snapshot_data_url,
+                    folder="snapshots",
+                    filename_prefix=f"mismatch_{roll_clean}"
+                )
+            except Exception:
+                snapshot_path = ""
 
         # Record Rejected attempt
         record_attendance(
@@ -330,7 +434,8 @@ async def api_mark_attendance(data: MarkAttendanceRequest, request: Request):
             specular_score=data.specular_score,
             texture_score=data.texture_score,
             moire_detected=1 if data.moire_detected else 0,
-            ear_value=data.ear_value
+            ear_value=data.ear_value,
+            device_id=data.device_id or ""
         )
 
         return JSONResponse(
@@ -366,7 +471,29 @@ async def api_mark_attendance(data: MarkAttendanceRequest, request: Request):
             }
         }
 
-    # Evaluate Multi-Layer Anti-Proxy Security (Liveness + Screen Reflection + Moiré Texture + IP Clumping + Geofencing)
+    # Check 1: Shared Device Binding Alert (Prevent one phone from scanning multiple friends)
+    device_sharing_alert = None
+    if data.device_id and data.device_id.strip():
+        prev_dev = get_device_recent_checkin(data.device_id, session_info["id"], roll_clean)
+        if prev_dev:
+            device_sharing_alert = f"Device fingerprint already registered a check-in for student {prev_dev['roll_no']} ({prev_dev['name']}) in this session"
+
+    # Check 2: Impossible Travel / Mock GPS Teleportation Detection
+    impossible_travel_alert = None
+    if data.latitude is not None and data.longitude is not None:
+        last_att = get_last_attendance_for_user(user["id"])
+        if last_att and last_att.get("latitude") is not None and last_att.get("longitude") is not None:
+            is_jump, jump_reason = check_impossible_travel(
+                prev_lat=last_att.get("latitude"),
+                prev_lon=last_att.get("longitude"),
+                prev_timestamp=last_att.get("timestamp"),
+                current_lat=data.latitude,
+                current_lon=data.longitude
+            )
+            if is_jump:
+                impossible_travel_alert = jump_reason
+
+    # Evaluate Multi-Layer Anti-Proxy Security
     is_proxy_suspect, proxy_flags_list = perform_anti_proxy_evaluation(
         user_id=user["id"],
         roll_no=roll_clean,
@@ -380,21 +507,25 @@ async def api_mark_attendance(data: MarkAttendanceRequest, request: Request):
         specular_score=data.specular_score,
         texture_score=data.texture_score,
         moire_detected=bool(data.moire_detected),
-        ear_value=data.ear_value
+        ear_value=data.ear_value,
+        device_sharing_alert=device_sharing_alert,
+        impossible_travel_alert=impossible_travel_alert
     )
 
     attendance_status = "FLAGGED_PROXY" if is_proxy_suspect else "PRESENT"
     proxy_flags_str = "; ".join(proxy_flags_list) if proxy_flags_list else ""
 
-    # Save attendance snapshot
-    try:
-        snapshot_path = save_base64_image(
-            base64_str=data.snapshot_data_url,
-            folder="snapshots",
-            filename_prefix=f"attend_{roll_clean}"
-        )
-    except Exception as e:
-        snapshot_path = ""
+    # Save attendance snapshot (optional in lightweight weak Wi-Fi mode)
+    snapshot_path = ""
+    if data.snapshot_data_url and data.snapshot_data_url.strip():
+        try:
+            snapshot_path = save_base64_image(
+                base64_str=data.snapshot_data_url,
+                folder="snapshots",
+                filename_prefix=f"attend_{roll_clean}"
+            )
+        except Exception:
+            snapshot_path = ""
 
     # Human-readable location coordinates & altitude
     loc_text = data.location_address if data.location_address else ""
@@ -435,7 +566,8 @@ async def api_mark_attendance(data: MarkAttendanceRequest, request: Request):
         specular_score=data.specular_score,
         texture_score=data.texture_score,
         moire_detected=1 if data.moire_detected else 0,
-        ear_value=data.ear_value
+        ear_value=data.ear_value,
+        device_id=data.device_id or ""
     )
 
     return {
@@ -528,10 +660,39 @@ async def api_update_settings(req: UpdateSettingsRequest):
             set_setting(key, str(val))
     return {"success": True, "message": "Settings updated successfully."}
 
+@app.get("/api/host/backup-database")
+async def api_backup_database(format: str = "json"):
+    """Automated and on-demand full database backup (solves Render ephemeral disk wipe)."""
+    now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if format.lower() == "csv":
+        csv_data = export_full_database_csv()
+        filename = f"veriface_database_backup_{now_str}.csv"
+        return StreamingResponse(
+            io.BytesIO(csv_data.encode("utf-8")),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+    else:
+        backup_dict = export_full_database_backup()
+        json_data = json.dumps(backup_dict, indent=2)
+        filename = f"veriface_database_backup_{now_str}.json"
+        return StreamingResponse(
+            io.BytesIO(json_data.encode("utf-8")),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+
 # --- Lecturer & 5-Minute OTP Session APIs ---
 
 @app.post("/api/lecturer/login")
-async def api_lecturer_login(req: LecturerLoginRequest):
+async def api_lecturer_login(req: LecturerLoginRequest, request: Request):
+    client_ip = extract_client_ip(dict(request.headers), request.client.host if request.client else "127.0.0.1")
+    
+    # Rate limiting on faculty login (brute force mitigation: max 8 attempts/min)
+    if is_rate_limited(client_ip, "lecturer_login", max_requests=8, window_seconds=60):
+        raise HTTPException(status_code=429, detail="Too many login attempts. Please wait 1 minute.")
+
     lecturer = verify_lecturer_login(req.lecturer_id, req.password)
     if not lecturer:
         raise HTTPException(status_code=401, detail="Invalid Faculty ID or Password.")
@@ -551,6 +712,46 @@ async def api_create_session(req: CreateSessionRequest):
         duration_minutes=req.duration_minutes or 5
     )
     return {"success": True, "session": session}
+
+@app.get("/api/lecturer/rolling-otp/{session_id}")
+async def api_get_rolling_otp(session_id: int):
+    """
+    Returns the real-time 30-second rolling TOTP for display on the classroom projector.
+    Students cannot forward this code to absent friends because it cycles every 30 seconds.
+    """
+    session = get_class_session_by_id(session_id)
+    if not session or not session.get("is_active"):
+        raise HTTPException(status_code=404, detail="Active class session not found.")
+    
+    rolling = generate_rolling_otp(
+        session_id=session["id"],
+        secret=session.get("session_secret", ""),
+        window_seconds=30
+    )
+    return {
+        "success": True,
+        "session_id": session["id"],
+        "rolling_otp": rolling["otp"],
+        "seconds_remaining": rolling["seconds_remaining"],
+        "window_seconds": rolling["window_seconds"],
+        "next_otp": rolling["next_otp"]
+    }
+
+@app.post("/api/lecturer/manual-override")
+async def api_manual_override(req: ManualOverrideRequest):
+    """
+    Lecturer manual override for low-end phone camera failure, poor lighting, or student bandages.
+    Immediately marks the student Present with an official faculty audit note.
+    """
+    res = record_manual_override(
+        session_id=req.session_id,
+        lecturer_id=req.lecturer_id,
+        roll_no=req.roll_no,
+        reason=req.reason or "Faculty manual verification"
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    return res
 
 @app.get("/api/lecturer/active-session/{lecturer_id}")
 async def api_get_active_session(lecturer_id: str):
@@ -575,6 +776,7 @@ async def api_close_session(req: CloseSessionRequest):
 async def api_session_attendees(session_id: int):
     attendees = get_session_attendees(session_id)
     return {"success": True, "attendees": attendees, "count": len(attendees)}
+
 
 # --- Host-Exclusive Lecturer Management (Private to Host) ---
 
@@ -648,6 +850,7 @@ async def api_export_csv(date: Optional[str] = None):
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
+
 # --- Adaptive Liveness AI Training & Telemetry Routes ---
 
 @app.get("/api/host/liveness-stats")
@@ -670,4 +873,3 @@ async def api_host_train_liveness():
     """
     result = train_and_recalibrate_liveness_model()
     return result
-

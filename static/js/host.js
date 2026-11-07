@@ -627,6 +627,11 @@ async function loadSettings() {
     document.getElementById("setMaxIpLimit").value = s.max_users_per_ip_per_day || "2";
     document.getElementById("setAdminPin").value = s.admin_pin || "admin123";
     document.getElementById("setInstitutionName").value = s.institution_name || "Apex University";
+
+    const healthDisplay = document.getElementById("healthEndpointDisplay");
+    if (healthDisplay) {
+      healthDisplay.textContent = window.location.origin + "/health";
+    }
   } catch (err) {
     console.error("Settings load error:", err);
   }
