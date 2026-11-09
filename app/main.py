@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request, HTTPException, Depends, status
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 
 from app.database import (
@@ -35,6 +36,17 @@ from app.security import (
 init_db()
 
 app = FastAPI(title="Digital Attendance & Biometric Face Verification System")
+
+# High-Performance Compression & Static Asset Caching Middleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+@app.middleware("http")
+async def add_performance_and_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        # Cache static neural weights, JS libraries, and CSS for 7 days in client browser
+        response.headers["Cache-Control"] = "public, max-age=604800, immutable"
+    return response
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
