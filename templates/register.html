@@ -43,32 +43,35 @@
   <!-- Header / Navigation -->
   <header class="liquid-glass border-b border-white/60 dark:border-white/10 sticky top-0 z-40 shadow-sm backdrop-blur-md">
     <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center space-x-2 sm:space-x-3 min-w-0">
-        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/25 flex-shrink-0">
+      
+      <!-- Brand Logo -->
+      <a href="/" class="flex items-center space-x-2.5 sm:space-x-3 min-w-0 group">
+        <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold shadow-md shadow-blue-500/25 flex-shrink-0 group-hover:scale-105 transition-transform">
           <i data-lucide="scan-face" class="w-5 h-5 sm:w-6 sm:h-6"></i>
         </div>
         <div class="min-w-0">
           <h1 class="text-sm sm:text-base font-black text-slate-900 dark:text-white tracking-tight leading-none truncate">{{ institution_name }}</h1>
           <p class="hidden sm:block text-xs text-slate-500 dark:text-slate-400 font-medium mt-0.5">Biometric Face Enrollment & Identity Registration</p>
         </div>
-      </div>
+      </a>
 
-      <nav class="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
-        <a href="/" class="liquid-btn-glass px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5" title="Check-in">
+      <!-- Desktop Navigation Menu (md and above) -->
+      <nav class="hidden md:flex items-center space-x-1.5 lg:space-x-2 flex-shrink-0">
+        <a href="/" class="liquid-btn-glass px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5" title="Check-in">
           <i data-lucide="camera" class="w-4 h-4"></i>
-          <span class="hidden sm:inline">Check-in</span>
+          <span>Check-in</span>
         </a>
-        <a href="/register" class="liquid-btn-primary px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm" title="Register Face ID">
+        <a href="/register" class="liquid-btn-primary px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm" title="Register Face ID">
           <i data-lucide="user-plus" class="w-4 h-4"></i>
-          <span class="hidden md:inline">Register</span>
+          <span>Register</span>
         </a>
-        <a href="/lecturer" class="liquid-btn-glass px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold text-purple-600 dark:text-purple-400 border-purple-200/50 dark:border-purple-500/30 flex items-center gap-1.5" title="Lecturer Portal">
+        <a href="/lecturer" class="liquid-btn-glass px-3 py-2 rounded-xl text-xs font-semibold text-purple-600 dark:text-purple-400 border-purple-200/50 dark:border-purple-500/30 flex items-center gap-1.5" title="Lecturer Portal">
           <i data-lucide="graduation-cap" class="w-4 h-4 text-purple-600 dark:text-purple-400"></i>
-          <span class="hidden md:inline">Lecturer</span>
+          <span>Lecturer</span>
         </a>
-        <a href="/host" class="liquid-btn-glass px-2.5 sm:px-3 py-2 rounded-xl text-xs font-semibold text-blue-600 dark:text-blue-400 border-blue-200/50 dark:border-blue-500/30 flex items-center gap-1.5" title="Host Portal">
+        <a href="/host" class="liquid-btn-glass px-3 py-2 rounded-xl text-xs font-semibold text-blue-600 dark:text-blue-400 border-blue-200/50 dark:border-blue-500/30 flex items-center gap-1.5" title="Host Portal">
           <i data-lucide="shield-check" class="w-4 h-4 text-blue-600 dark:text-blue-400"></i>
-          <span class="hidden lg:inline">Host</span>
+          <span>Host</span>
         </a>
         <!-- Stable Dark Mode Toggle Button -->
         <button type="button" onclick="toggleTheme()" class="theme-toggle-btn ml-1" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
@@ -77,8 +80,116 @@
           </span>
         </button>
       </nav>
+
+      <!-- Mobile Actions Bar (Under md: 3-Dots Menu & Theme Switcher) -->
+      <div class="flex md:hidden items-center space-x-1.5">
+        <button type="button" onclick="toggleTheme()" class="theme-toggle-btn" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
+          <span class="theme-icon-container">
+            <i data-lucide="moon" class="w-4 h-4 text-slate-700 dark:text-amber-300"></i>
+          </span>
+        </button>
+        <button type="button" onclick="openMobileDrawer()" class="mobile-portal-btn p-2 rounded-xl text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 shadow-sm flex items-center justify-center transition-all" aria-label="Open portal menu" title="Open navigation menu">
+          <i data-lucide="more-vertical" class="w-5 h-5"></i>
+        </button>
+      </div>
+
     </div>
   </header>
+
+  <!-- Mobile Navigation Side Portal (Off-Canvas Drawer) -->
+  <div id="mobileDrawerBackdrop" class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300" onclick="closeMobileDrawer()"></div>
+
+  <aside id="mobileDrawer" class="fixed top-0 right-0 bottom-0 z-50 w-full max-w-xs sm:max-w-sm bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col translate-x-full transition-transform duration-300 ease-in-out">
+    <!-- Drawer Header -->
+    <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-sm">
+          <i data-lucide="scan-face" class="w-4 h-4"></i>
+        </div>
+        <div>
+          <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-tight">VeriFace Portal</h3>
+          <p class="text-[11px] text-slate-500 dark:text-slate-400">Navigation & Services</p>
+        </div>
+      </div>
+      <button onclick="closeMobileDrawer()" class="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Close menu">
+        <i data-lucide="x" class="w-5 h-5"></i>
+      </button>
+    </div>
+
+    <!-- Drawer Body -->
+    <div class="flex-1 overflow-y-auto p-4 space-y-5">
+      <div>
+        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 px-2">Student Attendance</div>
+        <div class="space-y-1">
+          <a href="/" onclick="closeMobileDrawer()" class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+            <i data-lucide="camera" class="w-4 h-4 text-blue-500"></i>
+            <div>
+              <div class="font-bold">Attendance Scanner</div>
+              <div class="text-[11px] text-slate-500 dark:text-slate-400">Biometric check-in with 30s OTP</div>
+            </div>
+          </a>
+          <a href="/register" onclick="closeMobileDrawer()" class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50">
+            <i data-lucide="user-plus" class="w-4 h-4"></i>
+            <div>
+              <div class="font-bold">Face ID Registration</div>
+              <div class="text-[11px] text-slate-500 dark:text-slate-400">Enroll new student biometric ID</div>
+            </div>
+          </a>
+        </div>
+      </div>
+
+      <div>
+        <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 px-2">Staff & Management</div>
+        <div class="space-y-1">
+          <a href="/lecturer" onclick="closeMobileDrawer()" class="flex items-center justify-between px-3 py-2.5 rounded-xl font-medium text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+            <div class="flex items-center gap-3">
+              <i data-lucide="graduation-cap" class="w-4 h-4 text-purple-500"></i>
+              <div>
+                <div class="font-bold">Lecturer Command Portal</div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400">Launch 30s OTP billboard</div>
+              </div>
+            </div>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300">Faculty</span>
+          </a>
+          <a href="/host" onclick="closeMobileDrawer()" class="flex items-center justify-between px-3 py-2.5 rounded-xl font-medium text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
+            <div class="flex items-center gap-3">
+              <i data-lucide="shield-check" class="w-4 h-4 text-blue-500"></i>
+              <div>
+                <div class="font-bold">Host & Security Console</div>
+                <div class="text-[11px] text-slate-500 dark:text-slate-400">Audits, DB export & settings</div>
+              </div>
+            </div>
+            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">Admin</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- DPDP Notice -->
+      <div class="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/60 text-xs">
+        <div class="flex items-center justify-between font-semibold text-slate-700 dark:text-slate-200 mb-1">
+          <span class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> Privacy Guaranteed
+          </span>
+          <span class="text-[10px] text-blue-600 dark:text-blue-400 font-bold uppercase">DPDP 2023</span>
+        </div>
+        <p class="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+          Biometrics are encoded into 128-D vectors. You can exercise your Right to Erasure anytime to delete your facial records.
+        </p>
+      </div>
+    </div>
+
+    <!-- Drawer Footer -->
+    <div class="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
+      <div class="text-[11px] font-medium text-slate-400">
+        VeriFace v2.4 Enterprise
+      </div>
+      <button type="button" onclick="toggleTheme()" class="theme-toggle-btn" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
+        <span class="theme-icon-container">
+          <i data-lucide="moon" class="w-4 h-4 text-slate-700 dark:text-amber-300"></i>
+        </span>
+      </button>
+    </div>
+  </aside>
 
   <!-- Main Container -->
   <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex flex-col justify-center relative z-10">

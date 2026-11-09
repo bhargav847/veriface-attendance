@@ -768,3 +768,66 @@ html.dark ::-webkit-scrollbar-thumb {
 html.dark ::-webkit-scrollbar-thumb:hover {
   background: #64748b;
 }
+
+/* -------------------------------------------------------------
+   7. PROFESSIONAL MOBILE DRAWER (SIDE PORTAL) & RESPONSIVE POLISH
+   ------------------------------------------------------------- */
+.mobile-portal-btn {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html.dark .mobile-portal-btn {
+  background: rgba(30, 41, 59, 0.7);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #f8fafc;
+}
+
+.mobile-portal-btn:hover {
+  background: rgba(241, 245, 249, 0.9);
+  transform: translateY(-1px);
+}
+
+html.dark .mobile-portal-btn:hover {
+  background: rgba(51, 65, 85, 0.9);
+}
+
+.mobile-portal-btn:active {
+  transform: scale(0.95);
+}
+
+/* Off-canvas drawer sliding portal */
+#mobileDrawer {
+  will-change: transform;
+}
+
+/* Safe Area Inset Support for Modern iOS/Android Devices */
+@supports (padding-top: env(safe-area-inset-top)) {
+  header.liquid-glass {
+    padding-top: max(0px, env(safe-area-inset-top));
+  }
+  #mobileDrawer {
+    padding-top: max(0px, env(safe-area-inset-top));
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+}
+
+/* Clean mobile card ergonomics */
+@media (max-width: 640px) {
+  .liquid-glass {
+    border-radius: 1.25rem;
+  }
+  .scanner-viewport-wrapper {
+    border-radius: 1.25rem;
+  }
+  .face-oval-guide {
+    width: 180px;
+    height: 240px;
+  }
+  .scanner-hud-reticle {
+    inset: 8%;
+  }
+}

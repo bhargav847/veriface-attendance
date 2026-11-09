@@ -44,6 +44,42 @@ function updateThemeUI() {
   }
 }
 
+// =========================================================================
+// MOBILE NAVIGATION SIDE PORTAL / OFF-CANVAS DRAWER CONTROLLER
+// =========================================================================
+function openMobileDrawer() {
+  const backdrop = document.getElementById("mobileDrawerBackdrop");
+  const drawer = document.getElementById("mobileDrawer");
+  if (backdrop && drawer) {
+    backdrop.classList.remove("pointer-events-none");
+    backdrop.classList.remove("opacity-0");
+    backdrop.classList.add("opacity-100");
+    drawer.classList.remove("translate-x-full");
+    document.body.style.overflow = "hidden";
+  }
+  if (window.lucide && typeof lucide.createIcons === "function") {
+    lucide.createIcons();
+  }
+}
+
+function closeMobileDrawer() {
+  const backdrop = document.getElementById("mobileDrawerBackdrop");
+  const drawer = document.getElementById("mobileDrawer");
+  if (backdrop && drawer) {
+    backdrop.classList.add("pointer-events-none");
+    backdrop.classList.remove("opacity-100");
+    backdrop.classList.add("opacity-0");
+    drawer.classList.add("translate-x-full");
+    document.body.style.overflow = "";
+  }
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    closeMobileDrawer();
+  }
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   updateThemeUI();
 
