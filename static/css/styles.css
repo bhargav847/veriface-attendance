@@ -799,7 +799,54 @@ html.dark .mobile-portal-btn:hover {
   transform: scale(0.95);
 }
 
-/* Off-canvas drawer sliding portal */
+/* Off-canvas drawer sliding portal (Desktop & Mobile) */
+.mobile-drawer-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  background-color: rgba(2, 6, 23, 0.65) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  z-index: 9998 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s ease !important;
+}
+
+.mobile-drawer-backdrop.active {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  visibility: visible !important;
+}
+
+.mobile-drawer-panel {
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 100% !important;
+  max-width: 360px !important;
+  background-color: #ffffff !important;
+  border-left: 1px solid rgba(226, 232, 240, 0.8) !important;
+  box-shadow: -15px 0 45px rgba(0, 0, 0, 0.25) !important;
+  z-index: 9999 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  transform: translateX(100%) !important;
+  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  will-change: transform !important;
+}
+
+html.dark .mobile-drawer-panel {
+  background-color: #0b0f19 !important;
+  border-left-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: -15px 0 50px rgba(0, 0, 0, 0.75) !important;
+}
+
+.mobile-drawer-panel.active {
+  transform: translateX(0%) !important;
+}
+
 #mobileDrawer {
   will-change: transform;
 }

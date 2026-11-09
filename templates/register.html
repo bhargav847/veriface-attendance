@@ -79,6 +79,10 @@
             <i data-lucide="moon" class="w-4 h-4 text-slate-700 dark:text-amber-300"></i>
           </span>
         </button>
+        <!-- Desktop 3-Dots Portal Menu -->
+        <button type="button" onclick="openMobileDrawer()" class="mobile-portal-btn p-2 rounded-xl text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 shadow-sm flex items-center justify-center transition-all cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Open portal menu" title="Open Navigation & Services Portal">
+          <i data-lucide="more-vertical" class="w-5 h-5"></i>
+        </button>
       </nav>
 
       <!-- Mobile Actions Bar (Under md: 3-Dots Menu & Theme Switcher) -->
@@ -88,7 +92,7 @@
             <i data-lucide="moon" class="w-4 h-4 text-slate-700 dark:text-amber-300"></i>
           </span>
         </button>
-        <button type="button" onclick="openMobileDrawer()" class="mobile-portal-btn p-2 rounded-xl text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 shadow-sm flex items-center justify-center transition-all" aria-label="Open portal menu" title="Open navigation menu">
+        <button type="button" onclick="openMobileDrawer()" class="mobile-portal-btn p-2 rounded-xl text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 shadow-sm flex items-center justify-center transition-all cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Open portal menu" title="Open navigation menu">
           <i data-lucide="more-vertical" class="w-5 h-5"></i>
         </button>
       </div>
@@ -96,10 +100,10 @@
     </div>
   </header>
 
-  <!-- Mobile Navigation Side Portal (Off-Canvas Drawer) -->
-  <div id="mobileDrawerBackdrop" class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300" onclick="closeMobileDrawer()"></div>
+  <!-- Mobile & Desktop Navigation Side Portal (Off-Canvas Drawer) -->
+  <div id="mobileDrawerBackdrop" class="mobile-drawer-backdrop" onclick="closeMobileDrawer()"></div>
 
-  <aside id="mobileDrawer" class="fixed top-0 right-0 bottom-0 z-50 w-full max-w-xs sm:max-w-sm bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col translate-x-full transition-transform duration-300 ease-in-out">
+  <aside id="mobileDrawer" class="mobile-drawer-panel">
     <!-- Drawer Header -->
     <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
       <div class="flex items-center gap-2.5">

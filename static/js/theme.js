@@ -45,16 +45,16 @@ function updateThemeUI() {
 }
 
 // =========================================================================
-// MOBILE NAVIGATION SIDE PORTAL / OFF-CANVAS DRAWER CONTROLLER
+// MOBILE & DESKTOP NAVIGATION SIDE PORTAL / OFF-CANVAS DRAWER CONTROLLER
 // =========================================================================
 function openMobileDrawer() {
   const backdrop = document.getElementById("mobileDrawerBackdrop");
   const drawer = document.getElementById("mobileDrawer");
   if (backdrop && drawer) {
-    backdrop.classList.remove("pointer-events-none");
-    backdrop.classList.remove("opacity-0");
-    backdrop.classList.add("opacity-100");
-    drawer.classList.remove("translate-x-full");
+    backdrop.classList.add("active");
+    drawer.classList.add("active");
+    backdrop.classList.remove("pointer-events-none", "opacity-0", "hidden");
+    drawer.classList.remove("translate-x-full", "hidden");
     document.body.style.overflow = "hidden";
   }
   if (window.lucide && typeof lucide.createIcons === "function") {
@@ -66,10 +66,8 @@ function closeMobileDrawer() {
   const backdrop = document.getElementById("mobileDrawerBackdrop");
   const drawer = document.getElementById("mobileDrawer");
   if (backdrop && drawer) {
-    backdrop.classList.add("pointer-events-none");
-    backdrop.classList.remove("opacity-100");
-    backdrop.classList.add("opacity-0");
-    drawer.classList.add("translate-x-full");
+    backdrop.classList.remove("active");
+    drawer.classList.remove("active");
     document.body.style.overflow = "";
   }
 }
