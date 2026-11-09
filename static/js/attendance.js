@@ -315,6 +315,7 @@ async function startCamera() {
 // 3. EYE ASPECT RATIO (EAR) MATHEMATICAL COMPUTATION
 // -------------------------------------------------------------
 function calculatePointDistance(p1, p2) {
+  if (!p1 || !p2 || typeof p1.x !== 'number' || typeof p2.x !== 'number') return 0;
   const dx = p1.x - p2.x;
   const dy = p1.y - p2.y;
   return Math.sqrt(dx * dx + dy * dy);
@@ -326,11 +327,13 @@ function calculatePointDistance(p1, p2) {
  * eyePoints: Array of 6 landmark points [p1, p2, p3, p4, p5, p6]
  */
 function calculateEyeAspectRatio(eyePoints) {
+  if (!eyePoints || eyePoints.length < 6) return 0.30;
   const v1 = calculatePointDistance(eyePoints[1], eyePoints[5]);
   const v2 = calculatePointDistance(eyePoints[2], eyePoints[4]);
   const h = calculatePointDistance(eyePoints[0], eyePoints[3]);
-  if (h === 0) return 0.30;
-  return (v1 + v2) / (2.0 * h);
+  if (h <= 0.001) return 0.30;
+  const ear = (v1 + v2) / (2.0 * h);
+  return isNaN(ear) ? 0.30 : Math.max(0.05, Math.min(0.50, ear));
 }
 
 // Real-Time Illumination & Lighting Evaluation (Fix 4: Low light & camera hints)
@@ -405,17 +408,12 @@ async function startFaceTrackingLoop() {
     }
 
     const frameStartTime = performance.now();
-      requestAnimationFrame(loop);
-      return;
-    }
-
-    const frameStartTime = performance.now();
 
     try {
       const detection = await faceapi.detectSingleFace(videoElement, detectorOptions).withFaceLandmarks();
       ctx.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
 
-      if (detection) {
+      if (detection && detection.detection && detection.landmarks && Array.isArray(detection.landmarks.positions)) {
         const box = detection.detection.box;
         const centerX = box.x + box.width / 2;
         const centerY = box.y + box.height / 2;
@@ -423,42 +421,44 @@ async function startFaceTrackingLoop() {
         const frameCenterY = canvasOverlay.height / 2;
 
         const isCentered = Math.abs(centerX - frameCenterX) < 130 && Math.abs(centerY - frameCenterY) < 110;
-        const isGoodSize = box.width > 115 && box.height > 115;
+        const isGoodSize = box.width > 105 && box.height > 105;
 
         // Extract 68 landmark points
         const positions = detection.landmarks.positions;
-        const leftEyePoints = [positions[36], positions[37], positions[38], positions[39], positions[40], positions[41]];
-        const rightEyePoints = [positions[42], positions[43], positions[44], positions[45], positions[46], positions[47]];
+        if (positions.length >= 68) {
+          const leftEyePoints = [positions[36], positions[37], positions[38], positions[39], positions[40], positions[41]];
+          const rightEyePoints = [positions[42], positions[43], positions[44], positions[45], positions[46], positions[47]];
 
-        const leftEAR = calculateEyeAspectRatio(leftEyePoints);
-        const rightEAR = calculateEyeAspectRatio(rightEyePoints);
-        currentEAR = (leftEAR + rightEAR) / 2.0;
+          const leftEAR = calculateEyeAspectRatio(leftEyePoints);
+          const rightEAR = calculateEyeAspectRatio(rightEyePoints);
+          currentEAR = (leftEAR + rightEAR) / 2.0;
 
-        // Draw Eye Landmark Contours on HUD Overlay
-        drawEyeContours(ctx, leftEyePoints, isEyeClosed);
-        drawEyeContours(ctx, rightEyePoints, isEyeClosed);
+          // Draw Eye Landmark Contours on HUD Overlay
+          drawEyeContours(ctx, leftEyePoints, isEyeClosed);
+          drawEyeContours(ctx, rightEyePoints, isEyeClosed);
 
-        // --- DYNAMIC BLINK STATE MACHINE ---
-        // Threshold: EAR <= 0.21 indicates eyes closed; EAR >= 0.25 indicates eyes open
-        if (currentEAR <= 0.21) {
-          isEyeClosed = true;
-          updateLivenessHUD("BLINKING", blinkCount, currentEAR);
-        } else if (currentEAR >= 0.25 && isEyeClosed) {
-          // Complete Blink Detected: Eyes transitioned from Open -> Closed -> Re-opened
-          isEyeClosed = false;
-          blinkCount++;
-          livenessVerified = true;
-          lastBlinkTimestamp = Date.now();
-          playAudioTone('liveness');
-          updateLivenessHUD("VERIFIED", blinkCount, currentEAR);
+          // --- DYNAMIC BLINK STATE MACHINE ---
+          // Threshold: EAR <= 0.22 indicates eyes closed; EAR >= 0.26 indicates eyes open
+          if (currentEAR <= 0.22) {
+            isEyeClosed = true;
+            updateLivenessHUD("BLINKING", blinkCount, currentEAR);
+          } else if (currentEAR >= 0.26 && isEyeClosed) {
+            // Complete Blink Detected: Eyes transitioned from Open -> Closed -> Re-opened
+            isEyeClosed = false;
+            blinkCount++;
+            livenessVerified = true;
+            lastBlinkTimestamp = Date.now();
+            playAudioTone('liveness');
+            updateLivenessHUD("VERIFIED", blinkCount, currentEAR);
 
-          // If user clicked 'Scan' and was waiting for liveness blink, trigger immediately!
-          if (waitingForBlinkToScan) {
-            waitingForBlinkToScan = false;
-            executeAttendanceVerification();
+            // If user clicked 'Scan' and was waiting for liveness blink, trigger immediately!
+            if (waitingForBlinkToScan) {
+              waitingForBlinkToScan = false;
+              executeAttendanceVerification();
+            }
+          } else {
+            updateLivenessHUD(livenessVerified ? "VERIFIED" : "WAITING", blinkCount, currentEAR);
           }
-        } else {
-          updateLivenessHUD(livenessVerified ? "VERIFIED" : "WAITING", blinkCount, currentEAR);
         }
 
         if (isCentered && isGoodSize) {
@@ -482,21 +482,22 @@ async function startFaceTrackingLoop() {
         updateLivenessHUD("NO_FACE", blinkCount, 0);
       }
     } catch (e) {
-      console.warn("Tracking frame exception:", e);
-    }
+      console.warn("Tracking frame exception (auto-recovering):", e);
+    } finally {
+      // Benchmark Throughput (FPS & Latency measurement)
+      const frameEndTime = performance.now();
+      currentLatencyMs = Math.round(frameEndTime - frameStartTime);
+      frameCount++;
+      if (frameEndTime - lastFpsTime >= 1000) {
+        currentFPS = Math.round((frameCount * 1000) / (frameEndTime - lastFpsTime));
+        frameCount = 0;
+        lastFpsTime = frameEndTime;
+        updateBenchmarkHUD(currentFPS, currentLatencyMs);
+      }
 
-    // Benchmark Throughput (FPS & Latency measurement)
-    const frameEndTime = performance.now();
-    currentLatencyMs = Math.round(frameEndTime - frameStartTime);
-    frameCount++;
-    if (frameEndTime - lastFpsTime >= 1000) {
-      currentFPS = Math.round((frameCount * 1000) / (frameEndTime - lastFpsTime));
-      frameCount = 0;
-      lastFpsTime = frameEndTime;
-      updateBenchmarkHUD(currentFPS, currentLatencyMs);
+      // Self-healing continuous loop: ALWAYS schedules next frame even if an error occurred
+      setTimeout(loop, 80);
     }
-
-    setTimeout(loop, 90);
   }
 
   loop();
