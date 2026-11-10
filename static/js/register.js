@@ -94,13 +94,19 @@ async function startCamera() {
     stream = await navigator.mediaDevices.getUserMedia(constraints);
     videoElement.srcObject = stream;
 
-    videoElement.onloadedmetadata = () => {
-      videoElement.play();
-      canvasOverlay.width = videoElement.videoWidth;
-      canvasOverlay.height = videoElement.videoHeight;
+    const onStreamReady = () => {
+      videoElement.play().catch(e => console.warn("Video play error:", e));
+      canvasOverlay.width = videoElement.videoWidth || 640;
+      canvasOverlay.height = videoElement.videoHeight || 480;
       updateStatus("Sensor Active. Center your face.", "ready");
       startFaceTracking();
     };
+
+    if (videoElement.readyState >= 1) {
+      onStreamReady();
+    } else {
+      videoElement.onloadedmetadata = onStreamReady;
+    }
   } catch (err) {
     console.error("Camera access failed:", err);
     updateStatus("Camera permission denied.", "error");
@@ -112,21 +118,28 @@ function startFaceTracking() {
   if (isDetecting) return;
   isDetecting = true;
 
-  const displaySize = { width: videoElement.videoWidth, height: videoElement.videoHeight };
-  faceapi.matchDimensions(canvasOverlay, displaySize);
-
   const ovalGuide = document.getElementById("faceOvalGuide");
-  const submitBtn = document.getElementById("captureBtn");
   const hudReticle = document.getElementById("hudReticle");
 
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   const detectorOptions = new faceapi.TinyFaceDetectorOptions({
     inputSize: isMobile ? 160 : 224,
-    scoreThreshold: 0.40
+    scoreThreshold: 0.32
   });
 
   const detectionInterval = setInterval(async () => {
-    if (!modelsLoaded || videoElement.paused || videoElement.ended) return;
+    if (!modelsLoaded || !videoElement || videoElement.paused || videoElement.ended) return;
+
+    const displaySize = { 
+      width: videoElement.videoWidth || 640, 
+      height: videoElement.videoHeight || 480 
+    };
+
+    if (canvasOverlay.width !== displaySize.width || canvasOverlay.height !== displaySize.height) {
+      canvasOverlay.width = displaySize.width;
+      canvasOverlay.height = displaySize.height;
+    }
+    faceapi.matchDimensions(canvasOverlay, displaySize);
 
     try {
       const detection = await faceapi
@@ -136,7 +149,7 @@ function startFaceTracking() {
       const ctx = canvasOverlay.getContext("2d");
       ctx.clearRect(0, 0, canvasOverlay.width, canvasOverlay.height);
 
-      if (detection) {
+      if (detection && detection.detection) {
         const resized = faceapi.resizeResults(detection, displaySize);
         const box = resized.detection.box;
 
@@ -146,27 +159,88 @@ function startFaceTracking() {
         const targetY = displaySize.height / 2;
 
         const distFromCenter = Math.hypot(centerX - targetX, centerY - targetY);
-        const isCentered = distFromCenter < (displaySize.width * 0.18);
-        const isGoodSize = box.width > (displaySize.width * 0.22) && box.width < (displaySize.width * 0.85);
+        // Generous, natural threshold so green outline activates smoothly
+        const isCentered = distFromCenter < (displaySize.width * 0.28);
+        const isGoodSize = box.width > (displaySize.width * 0.16) && box.width < (displaySize.width * 0.90);
 
-        if (isCentered && isGoodSize) {
-          ovalGuide.classList.add("face-aligned");
-          hudReticle.classList.add("reticle-locked");
+        const isAligned = isCentered && isGoodSize;
+
+        if (isAligned) {
+          if (ovalGuide) ovalGuide.classList.add("aligned", "face-aligned");
+          if (hudReticle) hudReticle.classList.add("aligned", "reticle-locked");
           updateStatus("Face Aligned! Ready to Register.", "aligned");
         } else {
-          ovalGuide.classList.remove("face-aligned");
-          hudReticle.classList.remove("reticle-locked");
+          if (ovalGuide) ovalGuide.classList.remove("aligned", "face-aligned");
+          if (hudReticle) hudReticle.classList.remove("aligned", "reticle-locked");
           updateStatus("Center your face inside the oval.", "ready");
         }
+
+        // Live Dynamic Green / Cyan Visual Outline on HUD Canvas Overlay
+        const outlineColor = isAligned ? "#10b981" : "#38bdf8";
+        ctx.save();
+        ctx.strokeStyle = outlineColor;
+        ctx.lineWidth = isAligned ? 3.5 : 2;
+        ctx.shadowColor = outlineColor;
+        ctx.shadowBlur = isAligned ? 14 : 6;
+
+        // Draw HUD Corner Brackets around face
+        const pad = 12;
+        const bx = Math.max(2, box.x - pad);
+        const by = Math.max(2, box.y - pad);
+        const bw = Math.min(displaySize.width - bx - 2, box.width + pad * 2);
+        const bh = Math.min(displaySize.height - by - 2, box.height + pad * 2);
+        const cr = Math.min(18, bw * 0.2);
+
+        // Top-left
+        ctx.beginPath();
+        ctx.moveTo(bx, by + cr);
+        ctx.arcTo(bx, by, bx + cr, by, cr);
+        ctx.lineTo(bx + cr * 1.5, by);
+        ctx.stroke();
+
+        // Top-right
+        ctx.beginPath();
+        ctx.moveTo(bx + bw - cr * 1.5, by);
+        ctx.arcTo(bx + bw, by, bx + bw, by + cr, cr);
+        ctx.lineTo(bx + bw, by + cr * 1.5);
+        ctx.stroke();
+
+        // Bottom-right
+        ctx.beginPath();
+        ctx.moveTo(bx + bw, by + bh - cr * 1.5);
+        ctx.arcTo(bx + bw, by + bh, bx + bw - cr, by + bh, cr);
+        ctx.lineTo(bx + bw - cr * 1.5, by + bh);
+        ctx.stroke();
+
+        // Bottom-left
+        ctx.beginPath();
+        ctx.moveTo(bx + cr * 1.5, by + bh);
+        ctx.arcTo(bx, by + bh, bx, by + bh - cr, cr);
+        ctx.lineTo(bx, by + bh - cr * 1.5);
+        ctx.stroke();
+
+        // High-tech Facial Landmarks Glow Points
+        if (detection.landmarks && isAligned) {
+          ctx.fillStyle = "#34d399";
+          ctx.shadowColor = "#34d399";
+          ctx.shadowBlur = 4;
+          for (const pos of resized.landmarks.positions) {
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 1.8, 0, 2 * Math.PI);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+
       } else {
-        ovalGuide.classList.remove("face-aligned");
-        hudReticle.classList.remove("reticle-locked");
-        updateStatus("No face detected. Look directly into camera.", "ready");
+        if (ovalGuide) ovalGuide.classList.remove("aligned", "face-aligned");
+        if (hudReticle) hudReticle.classList.remove("aligned", "reticle-locked");
+        updateStatus("Looking for face... Look directly at camera.", "ready");
       }
     } catch (e) {
-      // Frame skip
+      // Skip frame safely
     }
-  }, 120);
+  }, 100);
 }
 
 async function handleRegistration() {
