@@ -278,6 +278,19 @@ def test_system():
     assert "text/csv" in res_csv_bk.headers["content-type"]
     print("  [PASS] GET /api/host/backup-database (JSON & CSV complete database export verified)")
 
+    # 19. Test Biometric Vector Leak Prevention (DPDP Act 2023 Security Hardening)
+    leak_res = client.get("/api/users/all-descriptors")
+    assert leak_res.status_code == 403, f"Expected 403 Forbidden, got {leak_res.status_code}"
+    assert "Access Denied" in leak_res.json()["detail"]
+    
+    # Confirm student lookup does not leak face_descriptor
+    lookup_clean = client.get(f"/api/user/lookup/{student_roll}")
+    assert lookup_clean.status_code == 200
+    assert "face_descriptor" not in lookup_clean.json()["user"], "Security Failure: face_descriptor was leaked in user lookup!"
+    assert lookup_clean.json()["user"]["is_enrolled"] is True
+    print("  [PASS] GET /api/users/all-descriptors (Blocked HTTP 403: Biometric vector exfiltration prevented)")
+    print("  [PASS] GET /api/user/lookup/{roll_no} (Privacy Hardened: No 128-D vector leaked in profile payload)")
+
     print("\n>>> ALL TESTS PASSED SUCCESSFULLY! VeriFace is completely verified and operational. <<<\n")
 
 if __name__ == "__main__":

@@ -284,10 +284,14 @@ async def api_student_delete_biometrics(roll_no: str):
 
 @app.get("/api/user/lookup/{roll_no}")
 async def api_lookup_user(roll_no: str):
-    """Quick lookup of registered user profile and enrolled face descriptor."""
-    user = get_user_by_roll_no(roll_no)
+    """
+    Lookup student profile metadata (Privacy-Hardened).
+    Under India's DPDP Act 2023, raw biometric 128-D descriptors are never exposed publicly.
+    """
+    clean_roll = roll_no.strip().upper()
+    user = get_user_by_roll_no(clean_roll)
     if not user:
-        raise HTTPException(status_code=404, detail=f"No registered student found with Roll Number '{roll_no.upper()}'.")
+        raise HTTPException(status_code=404, detail=f"No registered student found with Roll Number '{clean_roll}'.")
     
     return {
         "success": True,
@@ -297,7 +301,7 @@ async def api_lookup_user(roll_no: str):
             "name": user["name"],
             "department": user["department"],
             "avatar_path": user["avatar_path"],
-            "face_descriptor": user["face_descriptor"]
+            "is_enrolled": True
         }
     }
 
@@ -325,20 +329,15 @@ async def api_student_history(roll_no: str):
 
 @app.get("/api/users/all-descriptors")
 async def api_all_descriptors():
-    """Returns enrolled users with descriptors for auto-identification scan mode."""
-    users = get_all_users()
-    descriptors_list = []
-    for u in users:
-        full_user = get_user_by_id(u["id"])
-        if full_user:
-            descriptors_list.append({
-                "id": full_user["id"],
-                "roll_no": full_user["roll_no"],
-                "name": full_user["name"],
-                "avatar_path": full_user["avatar_path"],
-                "descriptor": full_user["face_descriptor"]
-            })
-    return {"success": True, "users": descriptors_list}
+    """
+    SECURITY HARDENED: Biometric Vector Leak Prevention (DPDP Act 2023).
+    Bulk extraction of raw biometric descriptors is strictly prohibited.
+    Face matching is performed exclusively server-side via 1:1 roll number verification.
+    """
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Access Denied: Bulk biometric vector exfiltration is disabled under India's DPDP Act 2023 compliance policy."
+    )
 
 
 @app.post("/api/mark-attendance")
