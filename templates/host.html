@@ -53,6 +53,7 @@
             type="password" 
             id="hostPinInput" 
             maxlength="20"
+            value="admin123"
             class="block w-full py-3 px-4 text-center tracking-widest text-lg font-mono font-black rounded-xl border border-slate-200/80 dark:border-white/10 bg-white/80 dark:bg-slate-800/80 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all shadow-sm"
             placeholder="••••••"
             autofocus
@@ -61,11 +62,12 @@
           <div id="pinErrorMsg" class="hidden text-xs text-rose-600 dark:text-rose-400 font-semibold mt-2"></div>
         </div>
 
-        <button type="submit" class="w-full py-3 rounded-xl liquid-btn-primary font-bold text-xs uppercase tracking-wider shadow-md transition-all">
-          Unlock Dashboard
+        <button type="submit" class="w-full py-3.5 rounded-xl liquid-btn-primary font-bold text-xs uppercase tracking-wider shadow-md transition-all flex items-center justify-center gap-2">
+          <i data-lucide="unlock" class="w-4 h-4"></i>
+          <span>Unlock Host Dashboard</span>
         </button>
 
-        <p class="text-[11px] text-slate-400">Default PIN: <code class="font-mono text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/10">admin123</code></p>
+        <p class="text-[11px] text-slate-400">Default Host PIN: <code class="font-mono text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/10">admin123</code></p>
       </form>
     </div>
   </div>
@@ -114,103 +116,26 @@
             <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
             <span>Logout</span>
           </button>
-          <!-- Desktop 3-Dots Portal Menu -->
-          <button type="button" onclick="openMobileDrawer()" class="mobile-portal-btn p-2 rounded-xl text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 shadow-sm flex items-center justify-center transition-all cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Open portal menu" title="Open Navigation & Services Portal">
-            <i data-lucide="more-vertical" class="w-5 h-5"></i>
-          </button>
         </div>
 
         <!-- Mobile Controls (Under md) -->
         <div class="flex md:hidden items-center space-x-1.5">
+          <a href="/" class="px-2.5 py-1.5 rounded-xl liquid-btn-glass text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+            <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+            <span>Check-in</span>
+          </a>
           <button type="button" onclick="toggleTheme()" class="theme-toggle-btn" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
             <span class="theme-icon-container">
               <i data-lucide="moon" class="w-4 h-4 text-slate-700 dark:text-amber-300"></i>
             </span>
           </button>
-          <button type="button" onclick="openMobileDrawer()" class="mobile-portal-btn p-2 rounded-xl text-slate-700 dark:text-slate-200 border border-slate-200/80 dark:border-white/10 shadow-sm flex items-center justify-center transition-all cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Open admin menu" title="Open navigation menu">
-            <i data-lucide="more-vertical" class="w-5 h-5"></i>
+          <button onclick="logoutHost()" class="liquid-btn-rose p-2 rounded-xl text-xs font-semibold flex items-center justify-center" title="Logout">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
           </button>
         </div>
 
       </div>
     </header>
-
-    <!-- Mobile & Desktop Navigation Side Portal (Off-Canvas Drawer) -->
-    <div id="mobileDrawerBackdrop" class="mobile-drawer-backdrop" onclick="closeMobileDrawer()"></div>
-
-    <aside id="mobileDrawer" class="mobile-drawer-panel">
-      <!-- Drawer Header -->
-      <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <div class="w-8 h-8 rounded-xl bg-slate-900 dark:bg-slate-800 flex items-center justify-center text-white shadow-sm border border-white/10">
-            <i data-lucide="shield-alert" class="w-4 h-4 text-blue-400"></i>
-          </div>
-          <div>
-            <h3 class="text-sm font-bold text-slate-900 dark:text-white leading-tight">Admin Console</h3>
-            <p class="text-[11px] text-slate-500 dark:text-slate-400">Host Security & Controls</p>
-          </div>
-        </div>
-        <button onclick="closeMobileDrawer()" class="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors" aria-label="Close menu">
-          <i data-lucide="x" class="w-5 h-5"></i>
-        </button>
-      </div>
-
-      <!-- Drawer Body -->
-      <div class="flex-1 overflow-y-auto p-4 space-y-5">
-        <div>
-          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 px-2">Navigation Portals</div>
-          <div class="space-y-1">
-            <a href="/" target="_blank" onclick="closeMobileDrawer()" class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
-              <i data-lucide="camera" class="w-4 h-4 text-blue-500"></i>
-              <div>
-                <div class="font-bold">Student Check-in View</div>
-                <div class="text-[11px] text-slate-500 dark:text-slate-400">Open student camera scanner</div>
-              </div>
-            </a>
-            <a href="/lecturer" target="_blank" onclick="closeMobileDrawer()" class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-medium text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors">
-              <i data-lucide="graduation-cap" class="w-4 h-4 text-purple-500"></i>
-              <div>
-                <div class="font-bold">Faculty / Lecturer Portal</div>
-                <div class="text-[11px] text-slate-500 dark:text-slate-400">Class sessions & 30s OTP</div>
-              </div>
-            </a>
-          </div>
-        </div>
-
-        <div>
-          <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-2 px-2">Data & Backup Tools</div>
-          <div class="space-y-2">
-            <button onclick="closeMobileDrawer(); exportAttendanceCSV()" class="w-full py-2.5 px-3 rounded-xl liquid-btn-emerald font-bold text-xs flex items-center justify-center gap-2">
-              <i data-lucide="download" class="w-3.5 h-3.5"></i>
-              <span>Export Attendance CSV</span>
-            </button>
-            <button onclick="closeMobileDrawer(); backupEntireDatabase()" class="w-full py-2.5 px-3 rounded-xl liquid-btn-glass font-bold text-xs flex items-center justify-center gap-2 text-slate-700 dark:text-slate-200">
-              <i data-lucide="database" class="w-3.5 h-3.5 text-blue-500"></i>
-              <span>Download DB JSON Backup</span>
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <button onclick="closeMobileDrawer(); logoutHost()" class="w-full py-3 px-4 rounded-xl liquid-btn-rose font-bold text-xs flex items-center justify-center gap-2">
-            <i data-lucide="log-out" class="w-4 h-4"></i>
-            <span>Lock Admin Console</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Drawer Footer -->
-      <div class="p-4 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center justify-between">
-        <div class="text-[11px] font-medium text-slate-400">
-          VeriFace v2.4 Enterprise
-        </div>
-        <button type="button" onclick="toggleTheme()" class="theme-toggle-btn" title="Toggle Dark/Light Mode" aria-label="Toggle Dark/Light Mode">
-          <span class="theme-icon-container">
-            <i data-lucide="moon" class="w-4 h-4 text-slate-700 dark:text-amber-300"></i>
-          </span>
-        </button>
-      </div>
-    </aside>
 
       </div>
     </header>
@@ -935,6 +860,30 @@
 
     </div>
   </div>
+
+  <!-- Ergonomic Mobile Bottom Navigation -->
+  <nav class="mobile-bottom-nav">
+    <a href="/" class="mobile-nav-item">
+      <i data-lucide="camera" class="w-5 h-5"></i>
+      <span>Check-in</span>
+    </a>
+    <a href="/#attendanceCalendarSection" class="mobile-nav-item">
+      <i data-lucide="calendar-days" class="w-5 h-5"></i>
+      <span>Calendar</span>
+    </a>
+    <a href="/register" class="mobile-nav-item">
+      <i data-lucide="user-plus" class="w-5 h-5"></i>
+      <span>Register</span>
+    </a>
+    <a href="/lecturer" class="mobile-nav-item">
+      <i data-lucide="graduation-cap" class="w-5 h-5"></i>
+      <span>Lecturer</span>
+    </a>
+    <a href="/host" class="mobile-nav-item active">
+      <i data-lucide="shield-check" class="w-5 h-5"></i>
+      <span>Host</span>
+    </a>
+  </nav>
 
   <!-- Lucide icons trigger -->
   <script>

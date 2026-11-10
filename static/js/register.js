@@ -153,21 +153,15 @@ function startFaceTracking() {
           ovalGuide.classList.add("face-aligned");
           hudReticle.classList.add("reticle-locked");
           updateStatus("Face Aligned! Ready to Register.", "aligned");
-          submitBtn.disabled = false;
-          submitBtn.classList.remove("opacity-50", "cursor-not-allowed");
         } else {
           ovalGuide.classList.remove("face-aligned");
           hudReticle.classList.remove("reticle-locked");
           updateStatus("Center your face inside the oval.", "ready");
-          submitBtn.disabled = true;
-          submitBtn.classList.add("opacity-50", "cursor-not-allowed");
         }
       } else {
         ovalGuide.classList.remove("face-aligned");
         hudReticle.classList.remove("reticle-locked");
         updateStatus("No face detected. Look directly into camera.", "ready");
-        submitBtn.disabled = true;
-        submitBtn.classList.add("opacity-50", "cursor-not-allowed");
       }
     } catch (e) {
       // Frame skip
@@ -196,20 +190,51 @@ async function handleRegistration() {
   submitBtn.disabled = true;
   submitBtn.innerHTML = `
     <span class="inline-block animate-spin mr-2">🔄</span>
-    Computing 128-D Biometric Embedding...
+    Detecting Face & Computing 128-D Vector...
   `;
 
-  updateStatus("Computing High-Accuracy 128-D Biometric Embedding...", "loading");
+  updateStatus("Computing Biometric 128-D Descriptor...", "loading");
 
   try {
-    const highAccDetection = await faceapi
-      .detectSingleFace(videoElement, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
-      .withFaceLandmarks()
-      .withFaceDescriptor();
+    let detection = null;
 
-    if (!highAccDetection) {
+    // 1. Primary: High-accuracy SSD MobileNet
+    try {
+      detection = await faceapi
+        .detectSingleFace(videoElement, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 }))
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+    } catch (e) {
+      console.warn("SSD MobileNet pass skipped:", e);
+    }
+
+    // 2. High-speed Fallback: TinyFaceDetector (works on all phones and weak lighting)
+    if (!detection) {
+      try {
+        detection = await faceapi
+          .detectSingleFace(videoElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.25 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+      } catch (e) {
+        console.warn("TinyFaceDetector pass skipped:", e);
+      }
+    }
+
+    // 3. Ultra-sensitive Fallback for small webcams
+    if (!detection) {
+      try {
+        detection = await faceapi
+          .detectSingleFace(videoElement, new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.20 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+      } catch (e) {
+        console.warn("Ultra-sensitive detector skipped:", e);
+      }
+    }
+
+    if (!detection) {
       playChime('error');
-      showAlert("High-accuracy face capture failed. Keep your face steady, well-lit, and facing forward.", "error");
+      showAlert("No clear face detected in the camera frame. Please face the camera directly in good lighting and try again.", "error");
       resetButton();
       return;
     }
@@ -218,18 +243,18 @@ async function handleRegistration() {
 
     // Create high-res avatar snapshot from video frame
     const captureCanvas = document.createElement("canvas");
-    captureCanvas.width = videoElement.videoWidth;
-    captureCanvas.height = videoElement.videoHeight;
+    captureCanvas.width = videoElement.videoWidth || 640;
+    captureCanvas.height = videoElement.videoHeight || 480;
     const cCtx = captureCanvas.getContext("2d");
     cCtx.translate(captureCanvas.width, 0);
     cCtx.scale(-1, 1);
     cCtx.drawImage(videoElement, 0, 0, captureCanvas.width, captureCanvas.height);
 
-    const avatarDataUrl = captureCanvas.toDataURL("image/jpeg", 0.90);
-    const descriptorArray = Array.from(highAccDetection.descriptor);
+    const avatarDataUrl = captureCanvas.toDataURL("image/jpeg", 0.85);
+    const descriptorArray = Array.from(detection.descriptor);
 
     // Send to Backend
-    updateStatus("Transmitting Biometric Credentials to Database...", "loading");
+    updateStatus("Registering 128-D Biometrics to Database...", "loading");
 
     const response = await fetch("/api/register", {
       method: "POST",

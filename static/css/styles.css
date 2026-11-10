@@ -770,95 +770,71 @@ html.dark ::-webkit-scrollbar-thumb:hover {
 }
 
 /* -------------------------------------------------------------
-   7. PROFESSIONAL MOBILE DRAWER (SIDE PORTAL) & RESPONSIVE POLISH
+   7. ERGONOMIC MOBILE BOTTOM NAVIGATION & ACCESSIBLE CONTROLS
    ------------------------------------------------------------- */
-.mobile-portal-btn {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+.mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--nav-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-top: 1px solid var(--nav-border);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding-bottom: max(0px, env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 20px -2px rgba(0, 0, 0, 0.08);
 }
 
-html.dark .mobile-portal-btn {
-  background: rgba(30, 41, 59, 0.7);
-  border-color: rgba(255, 255, 255, 0.12);
-  color: #f8fafc;
+@media (min-width: 769px) {
+  .mobile-bottom-nav {
+    display: none !important;
+  }
 }
 
-.mobile-portal-btn:hover {
-  background: rgba(241, 245, 249, 0.9);
-  transform: translateY(-1px);
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  touch-action: manipulation;
+  gap: 2px;
 }
 
-html.dark .mobile-portal-btn:hover {
-  background: rgba(51, 65, 85, 0.9);
+.mobile-nav-item:hover,
+.mobile-nav-item:active,
+.mobile-nav-item.active {
+  color: #3b82f6;
 }
 
-.mobile-portal-btn:active {
-  transform: scale(0.95);
+html.dark .mobile-nav-item:hover,
+html.dark .mobile-nav-item:active,
+html.dark .mobile-nav-item.active {
+  color: #60a5fa;
 }
 
-/* Off-canvas drawer sliding portal (Desktop & Mobile) */
-.mobile-drawer-backdrop {
-  position: fixed !important;
-  inset: 0 !important;
-  background-color: rgba(2, 6, 23, 0.65) !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
-  z-index: 9998 !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-  visibility: hidden !important;
-  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s ease !important;
-}
-
-.mobile-drawer-backdrop.active {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  visibility: visible !important;
-}
-
-.mobile-drawer-panel {
-  position: fixed !important;
-  top: 0 !important;
-  right: 0 !important;
-  bottom: 0 !important;
-  width: 100% !important;
-  max-width: 360px !important;
-  background-color: #ffffff !important;
-  border-left: 1px solid rgba(226, 232, 240, 0.8) !important;
-  box-shadow: -15px 0 45px rgba(0, 0, 0, 0.25) !important;
-  z-index: 9999 !important;
-  display: flex !important;
-  flex-direction: column !important;
-  transform: translateX(100%) !important;
-  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1) !important;
-  will-change: transform !important;
-}
-
-html.dark .mobile-drawer-panel {
-  background-color: #0b0f19 !important;
-  border-left-color: rgba(255, 255, 255, 0.1) !important;
-  box-shadow: -15px 0 50px rgba(0, 0, 0, 0.75) !important;
-}
-
-.mobile-drawer-panel.active {
-  transform: translateX(0%) !important;
-}
-
-#mobileDrawer {
-  will-change: transform;
+/* Ensure body has bottom padding on mobile so content is never covered by bottom nav */
+@media (max-width: 768px) {
+  body {
+    padding-bottom: 76px !important;
+  }
 }
 
 /* Safe Area Inset Support for Modern iOS/Android Devices */
 @supports (padding-top: env(safe-area-inset-top)) {
   header.liquid-glass {
     padding-top: max(0px, env(safe-area-inset-top));
-  }
-  #mobileDrawer {
-    padding-top: max(0px, env(safe-area-inset-top));
-    padding-bottom: max(0px, env(safe-area-inset-bottom));
   }
 }
 

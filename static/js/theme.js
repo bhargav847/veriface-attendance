@@ -44,40 +44,6 @@ function updateThemeUI() {
   }
 }
 
-// =========================================================================
-// MOBILE & DESKTOP NAVIGATION SIDE PORTAL / OFF-CANVAS DRAWER CONTROLLER
-// =========================================================================
-function openMobileDrawer() {
-  const backdrop = document.getElementById("mobileDrawerBackdrop");
-  const drawer = document.getElementById("mobileDrawer");
-  if (backdrop && drawer) {
-    backdrop.classList.add("active");
-    drawer.classList.add("active");
-    backdrop.classList.remove("pointer-events-none", "opacity-0", "hidden");
-    drawer.classList.remove("translate-x-full", "hidden");
-    document.body.style.overflow = "hidden";
-  }
-  if (window.lucide && typeof lucide.createIcons === "function") {
-    lucide.createIcons();
-  }
-}
-
-function closeMobileDrawer() {
-  const backdrop = document.getElementById("mobileDrawerBackdrop");
-  const drawer = document.getElementById("mobileDrawer");
-  if (backdrop && drawer) {
-    backdrop.classList.remove("active");
-    drawer.classList.remove("active");
-    document.body.style.overflow = "";
-  }
-}
-
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    closeMobileDrawer();
-  }
-});
-
 document.addEventListener("DOMContentLoaded", () => {
   updateThemeUI();
 

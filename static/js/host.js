@@ -6,8 +6,8 @@ let currentAttendanceLogs = [];
 let currentLogInspect = null;
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Check session storage
-  if (sessionStorage.getItem("host_auth") === "true") {
+  // Check session storage or localStorage for persistent host session
+  if (sessionStorage.getItem("host_auth") === "true" || localStorage.getItem("host_auth") === "true") {
     unlockHostDashboard();
   }
 
@@ -82,6 +82,7 @@ async function handlePinLogin() {
     }
 
     sessionStorage.setItem("host_auth", "true");
+    localStorage.setItem("host_auth", "true");
     unlockHostDashboard();
   } catch (err) {
     errorMsg.textContent = "Error connecting to server.";
@@ -104,6 +105,7 @@ function unlockHostDashboard() {
 
 function logoutHost() {
   sessionStorage.removeItem("host_auth");
+  localStorage.removeItem("host_auth");
   location.reload();
 }
 
