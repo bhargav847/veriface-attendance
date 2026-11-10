@@ -662,10 +662,25 @@ async function executeAttendanceVerification() {
     cCtx.drawImage(videoElement, 0, 0, captureCanvas.width, captureCanvas.height);
     const snapshotDataUrl = captureCanvas.toDataURL("image/jpeg", 0.50);
 
+    // Scale detected face bounding box dynamically to captureCanvas dimensions
+    const rawBox = (detection && detection.detection && detection.detection.box) 
+      ? detection.detection.box 
+      : { x: 20, y: 15, width: 120, height: 90 };
+    const vW = videoElement.videoWidth || 640;
+    const vH = videoElement.videoHeight || 480;
+    const scaleX = captureCanvas.width / vW;
+    const scaleY = captureCanvas.height / vH;
+    const scaledFaceBox = {
+      x: rawBox.x * scaleX,
+      y: rawBox.y * scaleY,
+      width: rawBox.width * scaleX,
+      height: rawBox.height * scaleY
+    };
+
     // --- SILENT ADVANCED ANTI-SPOOFING: TEXTURE & SCREEN REFLECTION ANALYSIS ---
     const { specularScore, textureScore, moireDetected } = analyzeFaceTextureAndScreenReflection(
       cCtx,
-      { x: 20, y: 15, width: 120, height: 90 },
+      scaledFaceBox,
       captureCanvas.width,
       captureCanvas.height
     );

@@ -81,7 +81,11 @@ async function handleLecturerLogin() {
     }
 
     currentLecturer = data.lecturer;
+    if (data.token) {
+      currentLecturer.token = data.token;
+    }
     sessionStorage.setItem("lecturer_auth", JSON.stringify(currentLecturer));
+    localStorage.setItem("lecturer_auth", JSON.stringify(currentLecturer));
     unlockLecturerPortal();
   } catch (err) {
     errEl.textContent = "Error connecting to server.";
@@ -241,7 +245,12 @@ async function fetchAndRenderRollingOtp(sessionId) {
   try {
     // Only query server when local timer nears 0 or every 10 seconds to save bandwidth
     if (localRollingSecs <= 1 || localRollingSecs >= 29) {
-      const res = await fetch(`/api/lecturer/rolling-otp/${sessionId}`);
+      const headers = {};
+      if (currentLecturer) {
+        headers["X-Lecturer-Id"] = currentLecturer.lecturer_id;
+        if (currentLecturer.token) headers["X-Lecturer-Token"] = currentLecturer.token;
+      }
+      const res = await fetch(`/api/lecturer/rolling-otp/${sessionId}`, { headers });
       const data = await res.json();
       if (data.success) {
         const otpEl = document.getElementById("rollingOtpDisplay");

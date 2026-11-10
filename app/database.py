@@ -32,8 +32,11 @@ def get_db():
         except Exception as e:
             print(f"PostgreSQL connection error: {e}. Using SQLite fallback.")
             
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=20.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
     return conn
 
 def init_db():

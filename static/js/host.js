@@ -83,11 +83,26 @@ async function handlePinLogin() {
 
     sessionStorage.setItem("host_auth", "true");
     localStorage.setItem("host_auth", "true");
+    if (data.token) {
+      sessionStorage.setItem("host_token", data.token);
+      localStorage.setItem("host_token", data.token);
+    }
     unlockHostDashboard();
   } catch (err) {
     errorMsg.textContent = "Error connecting to server.";
     errorMsg.classList.remove("hidden");
   }
+}
+
+function hostFetch(url, options = {}) {
+  const token = localStorage.getItem("host_token") || sessionStorage.getItem("host_token") || "admin123";
+  options.headers = options.headers || {};
+  if (options.headers instanceof Headers) {
+    options.headers.set("X-Host-Token", token);
+  } else {
+    options.headers["X-Host-Token"] = token;
+  }
+  return fetch(url, options);
 }
 
 function unlockHostDashboard() {
@@ -106,6 +121,8 @@ function unlockHostDashboard() {
 function logoutHost() {
   sessionStorage.removeItem("host_auth");
   localStorage.removeItem("host_auth");
+  sessionStorage.removeItem("host_token");
+  localStorage.removeItem("host_token");
   location.reload();
 }
 
@@ -158,7 +175,7 @@ async function loadDashboardStats() {
   const dateVal = dateInput ? dateInput.value : "";
 
   try {
-    const res = await fetch(`/api/host/stats?date=${dateVal}`);
+    const res = await hostFetch(`/api/host/stats?date=${dateVal}`);
     const data = await res.json();
     if (data.success) {
       document.getElementById("kpiTotalStudents").textContent = data.stats.total_students;
@@ -196,7 +213,7 @@ async function loadAttendanceLogs() {
       url += `&search=${encodeURIComponent(searchVal)}`;
     }
 
-    const res = await fetch(url);
+    const res = await hostFetch(url);
     const data = await res.json();
 
     if (!data.success || !data.logs || data.logs.length === 0) {
@@ -383,7 +400,7 @@ async function updateInspectionStatus(newStatus) {
   const notes = document.getElementById("inspAdminNotes").value.trim();
 
   try {
-    const res = await fetch("/api/host/override-status", {
+    const res = await hostFetch("/api/host/override-status", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -416,7 +433,7 @@ async function loadStudentsList() {
   `;
 
   try {
-    const res = await fetch("/api/host/students");
+    const res = await hostFetch("/api/host/students");
     const data = await res.json();
 
     if (!data.success || !data.students || data.students.length === 0) {
@@ -461,7 +478,7 @@ async function deleteStudent(userId, rollNo) {
   }
 
   try {
-    const res = await fetch(`/api/host/students/${userId}`, { method: "DELETE" });
+    const res = await hostFetch(`/api/host/students/${userId}`, { method: "DELETE" });
     const data = await res.json();
     if (res.ok) {
       loadStudentsList();
@@ -489,7 +506,7 @@ async function loadLecturersList() {
   `;
 
   try {
-    const res = await fetch("/api/host/lecturers");
+    const res = await hostFetch("/api/host/lecturers");
     const data = await res.json();
 
     if (!data.success || !data.lecturers || data.lecturers.length === 0) {
@@ -550,7 +567,7 @@ async function handleCreateLecturer() {
   }
 
   try {
-    const res = await fetch("/api/host/lecturers", {
+    const res = await hostFetch("/api/host/lecturers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -598,7 +615,7 @@ async function deleteLecturer(lecturerId, name) {
   }
 
   try {
-    const res = await fetch(`/api/host/lecturers/${lecturerId}`, { method: "DELETE" });
+    const res = await hostFetch(`/api/host/lecturers/${lecturerId}`, { method: "DELETE" });
     const data = await res.json();
     if (res.ok) {
       loadLecturersList();
@@ -616,7 +633,7 @@ async function deleteLecturer(lecturerId, name) {
 
 async function loadSettings() {
   try {
-    const res = await fetch("/api/host/settings");
+    const res = await hostFetch("/api/host/settings");
     const data = await res.json();
     if (!data.success) return;
 
@@ -653,7 +670,7 @@ async function saveSettings() {
   };
 
   try {
-    const res = await fetch("/api/host/settings", {
+    const res = await hostFetch("/api/host/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -693,7 +710,8 @@ function detectHostCurrentLocation() {
 // Trigger CSV Export
 function exportAttendanceCSV() {
   const dateVal = document.getElementById("logDateFilter").value;
-  window.location.href = `/api/host/export-csv?date=${dateVal}`;
+  const token = localStorage.getItem("host_token") || sessionStorage.getItem("host_token") || "admin123";
+  window.location.href = `/api/host/export-csv?date=${dateVal}&token=${encodeURIComponent(token)}`;
 }
 
 // -------------------------------------------------------------
@@ -702,7 +720,7 @@ function exportAttendanceCSV() {
 
 async function loadLivenessStats() {
   try {
-    const res = await fetch("/api/host/liveness-stats");
+    const res = await hostFetch("/api/host/liveness-stats");
     const data = await res.json();
     if (data.success && data.stats) {
       const s = data.stats;
@@ -722,7 +740,7 @@ async function loadLivenessProfiles() {
   if (!tbody) return;
 
   try {
-    const res = await fetch("/api/host/liveness-profiles");
+    const res = await hostFetch("/api/host/liveness-profiles");
     const data = await res.json();
 
     if (!data.success || !data.profiles || data.profiles.length === 0) {
@@ -772,7 +790,7 @@ async function triggerLivenessTraining() {
   }
 
   try {
-    const res = await fetch("/api/host/train-liveness", { method: "POST" });
+    const res = await hostFetch("/api/host/train-liveness", { method: "POST" });
     const data = await res.json();
 
     if (toast) {

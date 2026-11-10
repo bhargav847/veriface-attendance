@@ -230,6 +230,37 @@ def extract_client_ip(headers: Dict[str, str], client_host: Optional[str]) -> st
 
     return "127.0.0.1"
 
+# Cryptographic Session & Access Token Salt
+AUTH_SECRET = os.environ.get("VERIFACE_AUTH_SECRET", "veriface_enterprise_secure_salt_2026")
+
+def generate_session_token(subject: str, role: str = "host", valid_hours: int = 24) -> str:
+    """Generates a tamper-proof signed authorization token for host admin or faculty."""
+    expires = int(time.time()) + (valid_hours * 3600)
+    payload = f"{subject}:{role}:{expires}"
+    sig = hmac.new(AUTH_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:32]
+    return base64.urlsafe_b64encode(f"{payload}:{sig}".encode()).decode()
+
+def verify_session_token(token: str, expected_role: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Verifies a signed session token and returns payload dictionary if authentic and unexpired."""
+    try:
+        decoded = base64.urlsafe_b64decode(token.encode()).decode()
+        parts = decoded.split(":")
+        if len(parts) != 4:
+            return None
+        subject, role, expires_str, sig = parts
+        expires = int(expires_str)
+        if time.time() > expires:
+            return None
+        payload = f"{subject}:{role}:{expires_str}"
+        expected_sig = hmac.new(AUTH_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()[:32]
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+        if expected_role and role != expected_role:
+            return None
+        return {"subject": subject, "role": role, "expires": expires}
+    except Exception:
+        return None
+
 def perform_anti_proxy_evaluation(
     user_id: int,
     roll_no: str,
@@ -245,14 +276,15 @@ def perform_anti_proxy_evaluation(
     moire_detected: Optional[bool] = False,
     ear_value: Optional[float] = None,
     device_sharing_alert: Optional[str] = None,
-    impossible_travel_alert: Optional[str] = None
+    impossible_travel_alert: Optional[str] = None,
+    is_rolling_match: bool = False
 ) -> Tuple[bool, List[str]]:
     """
     Evaluates multi-layer anti-proxy triggers:
     1. Liveness reality check (Dynamic eye blink detection & personalized adaptive threshold).
     2. Screen reflection & specular glare analysis (Detects phone/tablet glass reflection).
     3. Micro-texture & Moiré frequency analysis (Detects digital display pixel matrices & printouts).
-    4. Multi-login on the same IP (IP clumping & device sharing detection).
+    4. Multi-login on the same IP (IP clumping & Campus Wi-Fi NAT awareness).
     5. Geofence perimeter check with GPS accuracy buffer & altitude telemetry.
     6. Impossible travel & mock GPS detection.
     7. Shared hardware device detection.
@@ -299,16 +331,21 @@ def perform_anti_proxy_evaluation(
         is_suspect = True
         flags.append(impossible_travel_alert)
 
-    # Check 6: Multi-login on the same IP (IP sharing detection)
+    # Check 6: Multi-login on the same IP (IP sharing detection with Campus Wi-Fi NAT exemption)
     try:
-        max_ip_limit = int(get_setting("max_users_per_ip_per_day", "2"))
+        max_ip_limit = int(get_setting("max_users_per_ip_per_day", "15"))
     except ValueError:
-        max_ip_limit = 2
+        max_ip_limit = 15
 
+    exempt_wifi = get_setting("exempt_campus_wifi", "true").lower() in ("true", "1")
     other_users_count = count_distinct_users_on_ip_today(ip_address, date_str, exclude_user_id=user_id)
     if other_users_count >= max_ip_limit:
-        is_suspect = True
-        flags.append(f"Shared IP Address: {other_users_count} other user(s) already checked in from IP {ip_address} today")
+        if exempt_wifi and is_rolling_match:
+            # Physical presence is guaranteed via classroom projector 30-second rolling TOTP
+            flags.append(f"Institutional Wi-Fi NAT: {other_users_count} students connected via IP {ip_address} (Verified via 30s Projector OTP)")
+        else:
+            is_suspect = True
+            flags.append(f"Shared IP Address: {other_users_count} other user(s) already checked in from IP {ip_address} today")
 
     # Check 7: Geofence perimeter check & precision evaluation
     geofence_enabled = get_setting("geofence_enabled", "false").lower() in ("true", "1", "yes")

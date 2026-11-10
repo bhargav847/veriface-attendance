@@ -26,7 +26,17 @@ def test_system():
         assert res.status_code == 200, f"Page {path} failed: {res.status_code}"
         print(f"  [PASS] GET {path} (Status 200)")
 
-    # 2. Host Registers a Lecturer Privately
+    # 2. Host Authenticates & Registers a Lecturer Privately
+    unauth_host = client.get("/api/host/stats")
+    assert unauth_host.status_code == 401, f"Expected 401 Unauthorized for unprotected host route, got {unauth_host.status_code}"
+    
+    pin_res = client.post("/api/host/verify-pin", json={"pin": "admin123"})
+    assert pin_res.status_code == 200
+    host_token = pin_res.json().get("token")
+    assert host_token is not None, "Host token was not returned on verify-pin"
+    host_headers = {"X-Host-Token": host_token}
+    print("  [PASS] POST /api/host/verify-pin (Host Admin Authenticated & Token Issued)")
+
     uid = int(time.time())
     lec_id = f"LEC-{uid % 10000}"
     lec_payload = {
@@ -37,7 +47,7 @@ def test_system():
         "password": "faculty_pass_123",
         "assigned_subject": "Computer Vision & Biometrics"
     }
-    res = client.post("/api/host/lecturers", json=lec_payload)
+    res = client.post("/api/host/lecturers", json=lec_payload, headers=host_headers)
     assert res.status_code == 200, f"Host create lecturer failed: {res.text}"
     assert res.json()["success"] is True
     print(f"  [PASS] POST /api/host/lecturers (Registered {lec_id})")
@@ -147,7 +157,7 @@ def test_system():
     print(f"  [PASS] POST /api/host/verify-pin (Admin authenticated)")
 
     # Stats
-    res = client.get("/api/host/stats")
+    res = client.get("/api/host/stats", headers=host_headers)
     assert res.status_code == 200
     stats = res.json()["stats"]
     assert stats["total_students"] >= 1
@@ -155,7 +165,7 @@ def test_system():
     print(f"  [PASS] GET /api/host/stats (Total Students: {stats['total_students']}, Present Today: {stats['today_present']})")
 
     # CSV Export
-    res = client.get("/api/host/export-csv")
+    res = client.get("/api/host/export-csv", headers=host_headers)
     assert res.status_code == 200
     assert "text/csv" in res.headers["content-type"]
     print(f"  [PASS] GET /api/host/export-csv (CSV downloaded)")
@@ -191,13 +201,13 @@ def test_system():
     print("  [PASS] POST /api/mark-attendance (Screen glare reflection correctly flagged)")
 
     # 12. Test Adaptive Liveness Training & Everyday Calibration
-    res = client.post("/api/host/train-liveness")
+    res = client.post("/api/host/train-liveness", headers=host_headers)
     assert res.status_code == 200
     train_data = res.json()
     assert train_data["success"] is True
     print(f"  [PASS] POST /api/host/train-liveness (Trained {train_data['calibrated_students']} student profiles)")
 
-    res = client.get("/api/host/liveness-stats")
+    res = client.get("/api/host/liveness-stats", headers=host_headers)
     assert res.status_code == 200
     l_stats = res.json()["stats"]
     assert l_stats["total_samples"] >= 1
@@ -209,14 +219,18 @@ def test_system():
     assert res.json()["status"] == "healthy"
     print("  [PASS] GET /health & /api/health (Uptime pinger keep-alive 200 OK)")
 
-    # 14. Test 30-Second Rolling OTP (Fix 2: OTP forwarding mitigation)
-    res = client.get(f"/api/lecturer/rolling-otp/{session_id}")
+    # 14. Test 30-Second Rolling OTP (Secured against sniffing)
+    unauth_otp = client.get(f"/api/lecturer/rolling-otp/{session_id}")
+    assert unauth_otp.status_code == 401, f"Expected 401 Unauthorized for unauthenticated rolling OTP access, got {unauth_otp.status_code}"
+    print("  [PASS] GET /api/lecturer/rolling-otp (Blocked 401: Unauthenticated code sniffing prevented)")
+
+    res = client.get(f"/api/lecturer/rolling-otp/{session_id}", headers={"X-Lecturer-Id": lec_id})
     assert res.status_code == 200
     rolling_data = res.json()
     assert "rolling_otp" in rolling_data
     assert len(rolling_data["rolling_otp"]) == 6
     rolling_code = rolling_data["rolling_otp"]
-    print(f"  [PASS] GET /api/lecturer/rolling-otp/{session_id} (Dynamic 30s Code: {rolling_code})")
+    print(f"  [PASS] GET /api/lecturer/rolling-otp/{session_id} (Authenticated Faculty: 30s Code {rolling_code})")
 
     # 15. Test Lightweight Vector-Only Check-in with Rolling OTP (Fix 6: Weak Wi-Fi & Fix 2)
     vector_roll = f"VEC-{uid}"
@@ -270,10 +284,10 @@ def test_system():
     print(f"  [PASS] DELETE /api/student/delete-biometrics/{override_roll} (DPDP Act Right to Erasure verified)")
 
     # 18. Test Full Database Backup (Fix 5: Render free disk is ephemeral)
-    res_json_bk = client.get("/api/host/backup-database?format=json")
+    res_json_bk = client.get("/api/host/backup-database?format=json", headers=host_headers)
     assert res_json_bk.status_code == 200
     assert "application/json" in res_json_bk.headers["content-type"]
-    res_csv_bk = client.get("/api/host/backup-database?format=csv")
+    res_csv_bk = client.get("/api/host/backup-database?format=csv", headers=host_headers)
     assert res_csv_bk.status_code == 200
     assert "text/csv" in res_csv_bk.headers["content-type"]
     print("  [PASS] GET /api/host/backup-database (JSON & CSV complete database export verified)")
@@ -290,6 +304,32 @@ def test_system():
     assert lookup_clean.json()["user"]["is_enrolled"] is True
     print("  [PASS] GET /api/users/all-descriptors (Blocked HTTP 403: Biometric vector exfiltration prevented)")
     print("  [PASS] GET /api/user/lookup/{roll_no} (Privacy Hardened: No 128-D vector leaked in profile payload)")
+
+    # 20. Test Campus Wi-Fi NAT Exemption & SQLite WAL Concurrency
+    # Multiple students on the same shared campus IP submitting via rotating projector code
+    shared_campus_ip = "203.0.113.88"
+    for s_idx in range(3):
+        w_roll = f"WIFI-{uid % 1000}-{s_idx}"
+        client.post("/api/register", json={
+            "roll_no": w_roll,
+            "name": f"Campus Wifi Student {s_idx}",
+            "department": "IT",
+            "face_descriptor": student_descriptor,
+            "avatar_data_url": ""
+        })
+        w_res = client.post("/api/mark-attendance", json={
+            "roll_no": w_roll,
+            "face_descriptor": student_descriptor,
+            "session_code": rolling_code,
+            "snapshot_data_url": "",
+            "device_id": f"dev-wifi-{s_idx}",
+            "liveness_verified": True,
+            "blink_count": 1
+        }, headers={"X-Forwarded-For": shared_campus_ip})
+        assert w_res.status_code == 200
+        # Should NOT be marked as FLAGGED_PROXY because rolling projector OTP verified presence!
+        assert w_res.json()["status"] == "PRESENT", f"Student {w_roll} was falsely flagged on shared IP!"
+    print("  [PASS] Campus Wi-Fi NAT Exemption Verified: Multiple in-class students on shared router not falsely flagged")
 
     print("\n>>> ALL TESTS PASSED SUCCESSFULLY! VeriFace is completely verified and operational. <<<\n")
 

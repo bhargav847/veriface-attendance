@@ -29,13 +29,46 @@ from app.security import (
     calculate_euclidean_distance, compute_match_confidence,
     save_base64_image, extract_client_ip, perform_anti_proxy_evaluation,
     generate_rolling_otp, verify_rolling_otp, check_impossible_travel,
-    is_rate_limited
+    is_rate_limited, generate_session_token, verify_session_token
 )
 
 # Initialize Database Schema
 init_db()
 
 app = FastAPI(title="Digital Attendance & Biometric Face Verification System")
+
+async def require_host_auth(request: Request):
+    """
+    Security Middleware / Dependency:
+    Enforces server-side authentication on all administrative /api/host/* routes.
+    Accepts:
+      - X-Host-Token header (signed token issued on verify-pin)
+      - Authorization: Bearer <token>
+      - token or admin_pin query parameter (for direct file downloads/exports)
+      - X-Admin-PIN header (master pin)
+    """
+    token = (
+        request.headers.get("X-Host-Token")
+        or request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+        or request.query_params.get("token")
+    )
+    admin_pin = request.headers.get("X-Admin-PIN") or request.query_params.get("admin_pin")
+    correct_pin = get_setting("admin_pin", "admin123")
+
+    if admin_pin and admin_pin == correct_pin:
+        return {"subject": "admin", "role": "host"}
+
+    if token:
+        verified = verify_session_token(token, expected_role="host")
+        if verified:
+            return verified
+        if token == correct_pin:
+            return {"subject": "admin", "role": "host"}
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Unauthorized: Host administration credentials or valid session token required."
+    )
 
 # High-Performance Compression & Static Asset Caching Middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -520,7 +553,8 @@ async def api_mark_attendance(data: MarkAttendanceRequest, request: Request):
         moire_detected=bool(data.moire_detected),
         ear_value=data.ear_value,
         device_sharing_alert=device_sharing_alert,
-        impossible_travel_alert=impossible_travel_alert
+        impossible_travel_alert=impossible_travel_alert,
+        is_rolling_match=is_rolling_match
     )
 
     attendance_status = "FLAGGED_PROXY" if is_proxy_suspect else "PRESENT"
@@ -616,11 +650,16 @@ async def api_mark_attendance(data: MarkAttendanceRequest, request: Request):
 async def api_verify_host_pin(auth: AdminAuthRequest):
     correct_pin = get_setting("admin_pin", "admin123")
     if auth.pin == correct_pin:
-        return {"success": True, "message": "Access granted."}
+        token = generate_session_token(subject="admin", role="host", valid_hours=24)
+        return {
+            "success": True,
+            "token": token,
+            "message": "Access granted."
+        }
     raise HTTPException(status_code=401, detail="Invalid Host PIN. Default PIN is 'admin123'.")
 
 @app.get("/api/host/stats")
-async def api_host_stats(date: Optional[str] = None):
+async def api_host_stats(date: Optional[str] = None, _auth: Dict = Depends(require_host_auth)):
     query_date = date or datetime.now().strftime("%Y-%m-%d")
     stats = get_dashboard_stats(query_date)
     return {"success": True, "stats": stats}
@@ -630,7 +669,8 @@ async def api_attendance_logs(
     date: Optional[str] = None,
     status_filter: Optional[str] = None,
     search: Optional[str] = None,
-    limit: int = 150
+    limit: int = 150,
+    _auth: Dict = Depends(require_host_auth)
 ):
     logs = get_attendance_logs(
         date_filter=date,
@@ -641,30 +681,30 @@ async def api_attendance_logs(
     return {"success": True, "logs": logs}
 
 @app.get("/api/host/students")
-async def api_host_students():
+async def api_host_students(_auth: Dict = Depends(require_host_auth)):
     students = get_all_users()
     return {"success": True, "students": students}
 
 @app.delete("/api/host/students/{user_id}")
-async def api_delete_student(user_id: int):
+async def api_delete_student(user_id: int, _auth: Dict = Depends(require_host_auth)):
     success = delete_user(user_id)
     if not success:
         raise HTTPException(status_code=404, detail="Student not found.")
     return {"success": True, "message": "Student profile and biometric data removed."}
 
 @app.post("/api/host/override-status")
-async def api_override_status(req: UpdateAttendanceRequest):
+async def api_override_status(req: UpdateAttendanceRequest, _auth: Dict = Depends(require_host_auth)):
     success = update_attendance_status(req.log_id, req.new_status, req.admin_notes or "Host override")
     if not success:
         raise HTTPException(status_code=404, detail="Attendance record not found.")
     return {"success": True, "message": f"Attendance record #{req.log_id} updated to {req.new_status}."}
 
 @app.get("/api/host/settings")
-async def api_get_settings():
+async def api_get_settings(_auth: Dict = Depends(require_host_auth)):
     return {"success": True, "settings": get_all_settings()}
 
 @app.post("/api/host/settings")
-async def api_update_settings(req: UpdateSettingsRequest):
+async def api_update_settings(req: UpdateSettingsRequest, _auth: Dict = Depends(require_host_auth)):
     data = req.model_dump(exclude_unset=True)
     for key, val in data.items():
         if val is not None:
@@ -672,7 +712,7 @@ async def api_update_settings(req: UpdateSettingsRequest):
     return {"success": True, "message": "Settings updated successfully."}
 
 @app.get("/api/host/backup-database")
-async def api_backup_database(format: str = "json"):
+async def api_backup_database(format: str = "json", _auth: Dict = Depends(require_host_auth)):
     """Automated and on-demand full database backup (solves Render ephemeral disk wipe)."""
     now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     if format.lower() == "csv":
@@ -707,7 +747,10 @@ async def api_lecturer_login(req: LecturerLoginRequest, request: Request):
     lecturer = verify_lecturer_login(req.lecturer_id, req.password)
     if not lecturer:
         raise HTTPException(status_code=401, detail="Invalid Faculty ID or Password.")
-    return {"success": True, "lecturer": lecturer}
+        
+    token = generate_session_token(subject=lecturer["lecturer_id"], role="lecturer", valid_hours=12)
+    lecturer["token"] = token
+    return {"success": True, "lecturer": lecturer, "token": token}
 
 @app.post("/api/lecturer/create-session")
 async def api_create_session(req: CreateSessionRequest):
@@ -725,14 +768,35 @@ async def api_create_session(req: CreateSessionRequest):
     return {"success": True, "session": session}
 
 @app.get("/api/lecturer/rolling-otp/{session_id}")
-async def api_get_rolling_otp(session_id: int):
+async def api_get_rolling_otp(session_id: int, request: Request):
     """
     Returns the real-time 30-second rolling TOTP for display on the classroom projector.
-    Students cannot forward this code to absent friends because it cycles every 30 seconds.
+    Requires authenticated faculty session or host token.
     """
     session = get_class_session_by_id(session_id)
     if not session or not session.get("is_active"):
         raise HTTPException(status_code=404, detail="Active class session not found.")
+    
+    # Faculty / Host Authorization Check
+    lec_id = request.headers.get("X-Lecturer-Id") or request.query_params.get("lecturer_id")
+    lec_token = request.headers.get("X-Lecturer-Token") or request.query_params.get("token")
+    admin_pin = request.headers.get("X-Admin-PIN") or request.headers.get("X-Host-Token")
+    
+    is_authorized = False
+    if lec_id and lec_id.strip().upper() == session.get("lecturer_id", "").strip().upper():
+        is_authorized = True
+    elif lec_token:
+        v = verify_session_token(lec_token)
+        if v and v.get("role") in ("lecturer", "host"):
+            is_authorized = True
+    elif admin_pin and admin_pin == get_setting("admin_pin", "admin123"):
+        is_authorized = True
+
+    if not is_authorized:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized: Access to projector rolling TOTP requires authenticated faculty session."
+        )
     
     rolling = generate_rolling_otp(
         session_id=session["id"],
@@ -792,12 +856,12 @@ async def api_session_attendees(session_id: int):
 # --- Host-Exclusive Lecturer Management (Private to Host) ---
 
 @app.get("/api/host/lecturers")
-async def api_host_get_lecturers():
+async def api_host_get_lecturers(_auth: Dict = Depends(require_host_auth)):
     lecturers = get_all_lecturers()
     return {"success": True, "lecturers": lecturers}
 
 @app.post("/api/host/lecturers")
-async def api_host_create_lecturer(req: CreateLecturerRequest):
+async def api_host_create_lecturer(req: CreateLecturerRequest, _auth: Dict = Depends(require_host_auth)):
     created = register_lecturer(
         lecturer_id=req.lecturer_id,
         name=req.name,
@@ -809,14 +873,14 @@ async def api_host_create_lecturer(req: CreateLecturerRequest):
     return {"success": True, "message": f"Faculty member {req.name} registered!", "lecturer": created}
 
 @app.delete("/api/host/lecturers/{lecturer_id}")
-async def api_host_delete_lecturer(lecturer_id: str):
+async def api_host_delete_lecturer(lecturer_id: str, _auth: Dict = Depends(require_host_auth)):
     deleted = delete_lecturer(lecturer_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Faculty member not found.")
     return {"success": True, "message": "Faculty profile removed."}
 
 @app.get("/api/host/export-csv")
-async def api_export_csv(date: Optional[str] = None):
+async def api_export_csv(date: Optional[str] = None, _auth: Dict = Depends(require_host_auth)):
     """Exports attendance logs as a downloadable CSV spreadsheet."""
     query_date = date or datetime.now().strftime("%Y-%m-%d")
     logs = get_attendance_logs(date_filter=query_date, limit=1000)
@@ -865,19 +929,19 @@ async def api_export_csv(date: Optional[str] = None):
 # --- Adaptive Liveness AI Training & Telemetry Routes ---
 
 @app.get("/api/host/liveness-stats")
-async def api_host_liveness_stats():
+async def api_host_liveness_stats(_auth: Dict = Depends(require_host_auth)):
     """Returns everyday liveness training telemetry statistics and current model state."""
     stats = get_liveness_training_stats()
     return {"success": True, "stats": stats}
 
 @app.get("/api/host/liveness-profiles")
-async def api_host_liveness_profiles():
+async def api_host_liveness_profiles(_auth: Dict = Depends(require_host_auth)):
     """Returns personalized learned liveness parameters for all students."""
     profiles = get_all_liveness_profiles()
     return {"success": True, "profiles": profiles}
 
 @app.post("/api/host/train-liveness")
-async def api_host_train_liveness():
+async def api_host_train_liveness(_auth: Dict = Depends(require_host_auth)):
     """
     Triggers online training and recalibration of the liveness model
     based on historical verified everyday attendance observations.
