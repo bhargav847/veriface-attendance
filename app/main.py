@@ -5,7 +5,7 @@ import io
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, Request, HTTPException, Depends, status
+from fastapi import FastAPI, Request, Response, HTTPException, Depends, status
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -69,6 +69,49 @@ async def require_host_auth(request: Request):
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Unauthorized: Host administration credentials or valid session token required."
     )
+
+async def require_lecturer_auth(request: Request) -> Dict[str, Any]:
+    """
+    Security Middleware / Dependency:
+    Enforces that the caller has an active, cryptographically signed faculty session.
+    Extracts session token from:
+      1. HTTP-Only Cookie 'veriface_lecturer_token'
+      2. Header 'X-Lecturer-Token' or 'Authorization: Bearer <token>'
+      3. Query parameter 'token' (for projector display modes)
+    Validates token signature and expiration. Never trusts caller-supplied unverified IDs.
+    """
+    token = (
+        request.headers.get("X-Lecturer-Token")
+        or request.headers.get("Authorization", "").replace("Bearer ", "").strip()
+        or request.cookies.get("veriface_lecturer_token")
+        or request.query_params.get("token")
+    )
+    
+    # Allow Host Admin master override for institutional audits
+    admin_pin = request.headers.get("X-Admin-PIN")
+    host_token = request.headers.get("X-Host-Token")
+    correct_pin = get_setting("admin_pin", "admin123")
+    if admin_pin and admin_pin == correct_pin:
+        return {"lecturer_id": "ADMIN", "role": "host"}
+    if host_token:
+        v_host = verify_session_token(host_token, expected_role="host")
+        if v_host:
+            return {"lecturer_id": "ADMIN", "role": "host"}
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Faculty authentication required: No valid session token provided. Please log in."
+        )
+
+    verified = verify_session_token(token)
+    if not verified or verified.get("role") not in ("lecturer", "host"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Faculty session expired or invalid. Please re-authenticate."
+        )
+
+    return {"lecturer_id": verified["subject"], "role": verified["role"]}
 
 # High-Performance Compression & Static Asset Caching Middleware
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -737,7 +780,7 @@ async def api_backup_database(format: str = "json", _auth: Dict = Depends(requir
 # --- Lecturer & 5-Minute OTP Session APIs ---
 
 @app.post("/api/lecturer/login")
-async def api_lecturer_login(req: LecturerLoginRequest, request: Request):
+async def api_lecturer_login(req: LecturerLoginRequest, request: Request, response: Response):
     client_ip = extract_client_ip(dict(request.headers), request.client.host if request.client else "127.0.0.1")
     
     # Rate limiting on faculty login (brute force mitigation: max 8 attempts/min)
@@ -749,12 +792,27 @@ async def api_lecturer_login(req: LecturerLoginRequest, request: Request):
         raise HTTPException(status_code=401, detail="Invalid Faculty ID or Password.")
         
     token = generate_session_token(subject=lecturer["lecturer_id"], role="lecturer", valid_hours=12)
+    response.set_cookie(
+        key="veriface_lecturer_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=43200,
+        secure=False
+    )
     lecturer["token"] = token
     return {"success": True, "lecturer": lecturer, "token": token}
 
+@app.post("/api/lecturer/logout")
+async def api_lecturer_logout(response: Response):
+    response.delete_cookie(key="veriface_lecturer_token")
+    return {"success": True, "message": "Faculty session logged out and token cleared."}
+
 @app.post("/api/lecturer/create-session")
-async def api_create_session(req: CreateSessionRequest):
-    lecturer = get_lecturer_by_id(req.lecturer_id)
+async def api_create_session(req: CreateSessionRequest, auth: Dict = Depends(require_lecturer_auth)):
+    # Cryptographically verified faculty ID - never trust unverified caller-supplied IDs
+    effective_lec_id = req.lecturer_id if auth["role"] == "host" and req.lecturer_id else auth["lecturer_id"]
+    lecturer = get_lecturer_by_id(effective_lec_id)
     if not lecturer:
         raise HTTPException(status_code=404, detail="Faculty record not found.")
     
@@ -768,34 +826,22 @@ async def api_create_session(req: CreateSessionRequest):
     return {"success": True, "session": session}
 
 @app.get("/api/lecturer/rolling-otp/{session_id}")
-async def api_get_rolling_otp(session_id: int, request: Request):
+async def api_get_rolling_otp(session_id: int, auth: Dict = Depends(require_lecturer_auth)):
     """
     Returns the real-time 30-second rolling TOTP for display on the classroom projector.
-    Requires authenticated faculty session or host token.
+    Requires authenticated faculty session for the session owner (or host admin).
+    Anti-forwarding protection: Only returns current OTP and seconds remaining.
+    Does NOT return future/next OTP to prevent lookahead forwarding.
     """
     session = get_class_session_by_id(session_id)
     if not session or not session.get("is_active"):
         raise HTTPException(status_code=404, detail="Active class session not found.")
     
-    # Faculty / Host Authorization Check
-    lec_id = request.headers.get("X-Lecturer-Id") or request.query_params.get("lecturer_id")
-    lec_token = request.headers.get("X-Lecturer-Token") or request.query_params.get("token")
-    admin_pin = request.headers.get("X-Admin-PIN") or request.headers.get("X-Host-Token")
-    
-    is_authorized = False
-    if lec_id and lec_id.strip().upper() == session.get("lecturer_id", "").strip().upper():
-        is_authorized = True
-    elif lec_token:
-        v = verify_session_token(lec_token)
-        if v and v.get("role") in ("lecturer", "host"):
-            is_authorized = True
-    elif admin_pin and admin_pin == get_setting("admin_pin", "admin123"):
-        is_authorized = True
-
-    if not is_authorized:
+    # Ownership check: Caller must be the session owner or host admin
+    if auth["role"] != "host" and session.get("lecturer_id", "").strip().upper() != auth["lecturer_id"].strip().upper():
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized: Access to projector rolling TOTP requires authenticated faculty session."
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You do not own this class session."
         )
     
     rolling = generate_rolling_otp(
@@ -808,19 +854,29 @@ async def api_get_rolling_otp(session_id: int, request: Request):
         "session_id": session["id"],
         "rolling_otp": rolling["otp"],
         "seconds_remaining": rolling["seconds_remaining"],
-        "window_seconds": rolling["window_seconds"],
-        "next_otp": rolling["next_otp"]
+        "window_seconds": rolling["window_seconds"]
     }
 
 @app.post("/api/lecturer/manual-override")
-async def api_manual_override(req: ManualOverrideRequest):
+async def api_manual_override(req: ManualOverrideRequest, auth: Dict = Depends(require_lecturer_auth)):
     """
     Lecturer manual override for low-end phone camera failure, poor lighting, or student bandages.
+    Requires authenticated faculty session and verifies session ownership.
     Immediately marks the student Present with an official faculty audit note.
     """
+    session = get_class_session_by_id(req.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Class session not found.")
+        
+    if auth["role"] != "host" and session.get("lecturer_id", "").strip().upper() != auth["lecturer_id"].strip().upper():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You can only perform manual override for your own sessions."
+        )
+        
     res = record_manual_override(
         session_id=req.session_id,
-        lecturer_id=req.lecturer_id,
+        lecturer_id=session["lecturer_id"],
         roll_no=req.roll_no,
         reason=req.reason or "Faculty manual verification"
     )
@@ -829,7 +885,14 @@ async def api_manual_override(req: ManualOverrideRequest):
     return res
 
 @app.get("/api/lecturer/active-session/{lecturer_id}")
-async def api_get_active_session(lecturer_id: str):
+async def api_get_active_session(lecturer_id: str, auth: Dict = Depends(require_lecturer_auth)):
+    # Ensure caller is querying their own session or is host admin
+    if auth["role"] != "host" and lecturer_id.strip().upper() != auth["lecturer_id"].strip().upper():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You can only view your own active session."
+        )
+
     session = get_active_session_for_lecturer(lecturer_id)
     if not session:
         return {"success": True, "has_active_session": False, "session": None}
@@ -843,12 +906,32 @@ async def api_get_active_session(lecturer_id: str):
     }
 
 @app.post("/api/lecturer/close-session")
-async def api_close_session(req: CloseSessionRequest):
-    success = close_class_session(req.session_id, req.lecturer_id)
+async def api_close_session(req: CloseSessionRequest, auth: Dict = Depends(require_lecturer_auth)):
+    session = get_class_session_by_id(req.session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Class session not found.")
+        
+    if auth["role"] != "host" and session.get("lecturer_id", "").strip().upper() != auth["lecturer_id"].strip().upper():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You can only close your own class session."
+        )
+        
+    success = close_class_session(req.session_id, session["lecturer_id"])
     return {"success": success, "message": "Class attendance session closed."}
 
 @app.get("/api/lecturer/session-attendees/{session_id}")
-async def api_session_attendees(session_id: int):
+async def api_session_attendees(session_id: int, auth: Dict = Depends(require_lecturer_auth)):
+    session = get_class_session_by_id(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Class session not found.")
+        
+    if auth["role"] != "host" and session.get("lecturer_id", "").strip().upper() != auth["lecturer_id"].strip().upper():
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: You can only view attendee rosters for your own sessions."
+        )
+        
     attendees = get_session_attendees(session_id)
     return {"success": True, "attendees": attendees, "count": len(attendees)}
 

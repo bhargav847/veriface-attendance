@@ -15,6 +15,7 @@ from app.database import init_db
 init_db()
 
 client = TestClient(app)
+anon_client = TestClient(app)
 
 def test_system():
     print(">>> Running Full VeriFace Verification & Security Test Suite...")
@@ -52,7 +53,21 @@ def test_system():
     assert res.json()["success"] is True
     print(f"  [PASS] POST /api/host/lecturers (Registered {lec_id})")
 
-    # 3. Lecturer Logs In
+    # Register second lecturer for cross-boundary RBAC testing
+    lec_id_2 = f"LEC2-{uid % 10000}"
+    lec_payload_2 = {
+        "lecturer_id": lec_id_2,
+        "name": "Prof. Ada Lovelace",
+        "email": "ada@university.edu",
+        "department": "Mathematics",
+        "password": "faculty_pass_456",
+        "assigned_subject": "Discrete Mathematics"
+    }
+    res2 = client.post("/api/host/lecturers", json=lec_payload_2, headers=host_headers)
+    assert res2.status_code == 200
+    print(f"  [PASS] POST /api/host/lecturers (Registered second faculty {lec_id_2})")
+
+    # 3. Lecturer Logs In (Issues Token & Sets HTTP-Only Cookie)
     res = client.post("/api/lecturer/login", json={
         "lecturer_id": lec_id,
         "password": "faculty_pass_123"
@@ -60,27 +75,54 @@ def test_system():
     assert res.status_code == 200, f"Lecturer login failed: {res.text}"
     lec_data = res.json()["lecturer"]
     assert lec_data["lecturer_id"] == lec_id
-    print(f"  [PASS] POST /api/lecturer/login (Authenticated {lec_data['name']})")
+    lec_token = res.json().get("token")
+    assert lec_token is not None, "Session token missing from login response"
+    assert "veriface_lecturer_token" in res.cookies, "HTTP-only cookie not set by lecturer login"
+    lec_headers = {"X-Lecturer-Token": lec_token}
+    print(f"  [PASS] POST /api/lecturer/login (Authenticated {lec_data['name']}, HTTP-only Cookie & Token Issued)")
 
-    # 4. Lecturer Creates 5-Minute Class Session OTP
+    # Lecturer 2 logs in
+    res_l2 = client.post("/api/lecturer/login", json={
+        "lecturer_id": lec_id_2,
+        "password": "faculty_pass_456"
+    })
+    assert res_l2.status_code == 200
+    lec_token_2 = res_l2.json().get("token")
+    lec_headers_2 = {"X-Lecturer-Token": lec_token_2}
+
+    # 4. Lecturer Creates Class Session OTP (Unauthenticated Must Fail)
     otp_code = f"OTP{uid % 1000}"
-    res = client.post("/api/lecturer/create-session", json={
+    unauth_create = anon_client.post("/api/lecturer/create-session", json={
         "lecturer_id": lec_id,
         "subject": "CS401 - Neural Networks",
         "custom_code": otp_code,
         "duration_minutes": 5
     })
+    assert unauth_create.status_code == 401, f"Expected 401 for unauthenticated create-session, got {unauth_create.status_code}"
+    print("  [PASS] POST /api/lecturer/create-session (Blocked 401: Unauthenticated session creation rejected)")
+
+    # Authenticated create-session
+    res = client.post("/api/lecturer/create-session", json={
+        "lecturer_id": lec_id,
+        "subject": "CS401 - Neural Networks",
+        "custom_code": otp_code,
+        "duration_minutes": 5
+    }, headers=lec_headers)
     assert res.status_code == 200, f"Create session failed: {res.text}"
     session = res.json()["session"]
     session_id = session["session_id"]
     assert session["session_code"] == otp_code
     print(f"  [PASS] POST /api/lecturer/create-session (Active OTP: {otp_code}, Session ID: {session_id})")
 
-    # Verify active session query
-    res = client.get(f"/api/lecturer/active-session/{lec_id}")
+    # Verify active session query (Unauthenticated -> 401, Lecturer B -> 403, Owner -> 200)
+    unauth_active = anon_client.get(f"/api/lecturer/active-session/{lec_id}")
+    assert unauth_active.status_code == 401
+    forbidden_active = client.get(f"/api/lecturer/active-session/{lec_id}", headers=lec_headers_2)
+    assert forbidden_active.status_code == 403, f"Expected 403 Forbidden for cross-faculty session lookup, got {forbidden_active.status_code}"
+    res = client.get(f"/api/lecturer/active-session/{lec_id}", headers=lec_headers)
     assert res.status_code == 200
     assert res.json()["has_active_session"] is True
-    print(f"  [PASS] GET /api/lecturer/active-session/{lec_id} (Session validated)")
+    print(f"  [PASS] GET /api/lecturer/active-session/{lec_id} (Secured: 401 Unauth, 403 Cross-Faculty, 200 Owner)")
 
     # 5. Enroll Student Face ID Profile
     sample_img_b64 = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA="
@@ -142,13 +184,18 @@ def test_system():
     assert rec["liveness_verified"] is True
     print(f"  [PASS] POST /api/mark-attendance (Verified! Conf: {rec['match_confidence']}%, Dist: {rec['match_distance']}, Alt: 920.4m, Blinks: 2)")
 
-    # 8. Lecturer Views Live Attendees
-    res = client.get(f"/api/lecturer/session-attendees/{session_id}")
+    # 8. Lecturer Views Live Attendees (Secured by Faculty Session & Ownership)
+    unauth_att = anon_client.get(f"/api/lecturer/session-attendees/{session_id}")
+    assert unauth_att.status_code == 401, f"Expected 401 for unauthenticated attendees list, got {unauth_att.status_code}"
+    forbid_att = client.get(f"/api/lecturer/session-attendees/{session_id}", headers=lec_headers_2)
+    assert forbid_att.status_code == 403, f"Expected 403 for cross-faculty attendees list, got {forbid_att.status_code}"
+
+    res = client.get(f"/api/lecturer/session-attendees/{session_id}", headers=lec_headers)
     assert res.status_code == 200
     attendees = res.json()["attendees"]
     assert len(attendees) >= 1
     assert attendees[0]["roll_no"] == student_roll
-    print(f"  [PASS] GET /api/lecturer/session-attendees (Found {len(attendees)} student check-ins)")
+    print(f"  [PASS] GET /api/lecturer/session-attendees (Secured: 401 Unauth, 403 Cross-Faculty, 200 Owner - Found {len(attendees)} check-ins)")
 
     # 9. Host Oversight & Audit
     # PIN auth
@@ -219,18 +266,28 @@ def test_system():
     assert res.json()["status"] == "healthy"
     print("  [PASS] GET /health & /api/health (Uptime pinger keep-alive 200 OK)")
 
-    # 14. Test 30-Second Rolling OTP (Secured against sniffing)
-    unauth_otp = client.get(f"/api/lecturer/rolling-otp/{session_id}")
+    # 14. Test 30-Second Rolling OTP (Secured against sniffing & lookahead leaks)
+    unauth_otp = anon_client.get(f"/api/lecturer/rolling-otp/{session_id}")
     assert unauth_otp.status_code == 401, f"Expected 401 Unauthorized for unauthenticated rolling OTP access, got {unauth_otp.status_code}"
-    print("  [PASS] GET /api/lecturer/rolling-otp (Blocked 401: Unauthenticated code sniffing prevented)")
+    
+    # Caller supplying unverified X-Lecturer-Id without cryptographic token must be rejected with 401
+    spoofed_header_otp = anon_client.get(f"/api/lecturer/rolling-otp/{session_id}", headers={"X-Lecturer-Id": lec_id})
+    assert spoofed_header_otp.status_code == 401, f"Expected 401 for caller supplying unauthenticated X-Lecturer-Id, got {spoofed_header_otp.status_code}"
+    print("  [PASS] GET /api/lecturer/rolling-otp (Blocked 401: Unauthenticated code sniffing & spoofed ID prevented)")
 
-    res = client.get(f"/api/lecturer/rolling-otp/{session_id}", headers={"X-Lecturer-Id": lec_id})
+    # Cross-faculty caller (Lecturer 2 querying Lecturer 1's session) must be rejected with 403 Forbidden
+    cross_otp = client.get(f"/api/lecturer/rolling-otp/{session_id}", headers=lec_headers_2)
+    assert cross_otp.status_code == 403, f"Expected 403 Forbidden for cross-faculty session OTP access, got {cross_otp.status_code}"
+    print("  [PASS] GET /api/lecturer/rolling-otp (Blocked 403: Cross-faculty session snooping prevented)")
+
+    res = client.get(f"/api/lecturer/rolling-otp/{session_id}", headers=lec_headers)
     assert res.status_code == 200
     rolling_data = res.json()
     assert "rolling_otp" in rolling_data
     assert len(rolling_data["rolling_otp"]) == 6
+    assert "next_otp" not in rolling_data, "Security Vulnerability: next_otp leaked in rolling OTP endpoint!"
     rolling_code = rolling_data["rolling_otp"]
-    print(f"  [PASS] GET /api/lecturer/rolling-otp/{session_id} (Authenticated Faculty: 30s Code {rolling_code})")
+    print(f"  [PASS] GET /api/lecturer/rolling-otp/{session_id} (Authenticated Faculty: 30s Code {rolling_code}, no lookahead leakage)")
 
     # 15. Test Lightweight Vector-Only Check-in with Rolling OTP (Fix 6: Weak Wi-Fi & Fix 2)
     vector_roll = f"VEC-{uid}"
@@ -255,7 +312,7 @@ def test_system():
     assert res.json()["status"] == "PRESENT"
     print("  [PASS] POST /api/mark-attendance (Lightweight 1.5 KB payload verified via 30s Rolling OTP)")
 
-    # 16. Test Lecturer Manual Override (Fix 4: Low-end phones / camera failure)
+    # 16. Test Lecturer Manual Override (Protected by Session Auth & Ownership)
     override_roll = f"MAN-{uid}"
     client.post("/api/register", json={
         "roll_no": override_roll,
@@ -264,15 +321,36 @@ def test_system():
         "face_descriptor": student_descriptor,
         "avatar_data_url": ""
     })
-    res = client.post("/api/lecturer/manual-override", json={
+    
+    # Unauthenticated override must fail with 401
+    unauth_override = anon_client.post("/api/lecturer/manual-override", json={
         "session_id": session_id,
         "lecturer_id": lec_id,
         "roll_no": override_roll,
         "reason": "Hardware camera failure / Low light"
     })
+    assert unauth_override.status_code == 401, f"Expected 401 for unauthenticated manual override, got {unauth_override.status_code}"
+    
+    # Cross-faculty override (Lecturer 2 attempting to override Lecturer 1's session) must fail with 403
+    forbid_override = client.post("/api/lecturer/manual-override", json={
+        "session_id": session_id,
+        "lecturer_id": lec_id_2,
+        "roll_no": override_roll,
+        "reason": "Unauthorized override attempt"
+    }, headers=lec_headers_2)
+    assert forbid_override.status_code == 403, f"Expected 403 for cross-faculty override, got {forbid_override.status_code}"
+    print("  [PASS] POST /api/lecturer/manual-override (Blocked 401 Unauth & 403 Cross-Faculty)")
+
+    # Valid session owner override
+    res = client.post("/api/lecturer/manual-override", json={
+        "session_id": session_id,
+        "lecturer_id": lec_id,
+        "roll_no": override_roll,
+        "reason": "Hardware camera failure / Low light"
+    }, headers=lec_headers)
     assert res.status_code == 200
     assert res.json()["success"] is True
-    print("  [PASS] POST /api/lecturer/manual-override (Faculty marked broken-camera student Present)")
+    print("  [PASS] POST /api/lecturer/manual-override (Authorized faculty marked broken-camera student Present)")
 
     # 17. Test DPDP Act 2023 Biometric Erasure (Fix 3: Right to Erasure)
     res = client.delete(f"/api/student/delete-biometrics/{override_roll}")
@@ -330,6 +408,21 @@ def test_system():
         # Should NOT be marked as FLAGGED_PROXY because rolling projector OTP verified presence!
         assert w_res.json()["status"] == "PRESENT", f"Student {w_roll} was falsely flagged on shared IP!"
     print("  [PASS] Campus Wi-Fi NAT Exemption Verified: Multiple in-class students on shared router not falsely flagged")
+
+    # 21. Test Session Close (401 Unauth, 403 Cross-faculty, 200 Owner)
+    unauth_close = anon_client.post("/api/lecturer/close-session", json={"session_id": session_id, "lecturer_id": lec_id})
+    assert unauth_close.status_code == 401
+    forbid_close = client.post("/api/lecturer/close-session", json={"session_id": session_id, "lecturer_id": lec_id_2}, headers=lec_headers_2)
+    assert forbid_close.status_code == 403
+    auth_close = client.post("/api/lecturer/close-session", json={"session_id": session_id, "lecturer_id": lec_id}, headers=lec_headers)
+    assert auth_close.status_code == 200
+    print("  [PASS] POST /api/lecturer/close-session (Secured: 401 Unauth, 403 Cross-faculty, 200 Owner)")
+
+    # 22. Test Faculty Logout
+    logout_res = client.post("/api/lecturer/logout")
+    assert logout_res.status_code == 200
+    assert logout_res.json()["success"] is True
+    print("  [PASS] POST /api/lecturer/logout (Session token revoked and cookie deleted)")
 
     print("\n>>> ALL TESTS PASSED SUCCESSFULLY! VeriFace is completely verified and operational. <<<\n")
 

@@ -8,15 +8,40 @@ let pollingInterval = null;
 let rollingOtpInterval = null;
 let currentOtpMode = "rolling"; // 'rolling' or 'static'
 
+/**
+ * Authenticated Fetch wrapper for Faculty Portal:
+ * Sends HTTP-only session cookies and 'X-Lecturer-Token' header.
+ * Redirects to login when session expires or becomes invalid.
+ */
+async function lecturerFetch(url, options = {}) {
+  options.credentials = "include";
+  options.headers = options.headers || {};
+  if (currentLecturer && currentLecturer.token) {
+    options.headers["X-Lecturer-Token"] = currentLecturer.token;
+  }
+  const res = await fetch(url, options);
+  if (res.status === 401) {
+    sessionStorage.removeItem("lecturer_auth");
+    localStorage.removeItem("lecturer_auth");
+    const loginModal = document.getElementById("lecturerLoginModal");
+    if (loginModal && loginModal.classList.contains("hidden")) {
+      alert("Faculty session expired. Please log in again.");
+      location.reload();
+    }
+  }
+  return res;
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   // Check session storage
-  const savedLecturer = sessionStorage.getItem("lecturer_auth");
+  const savedLecturer = sessionStorage.getItem("lecturer_auth") || localStorage.getItem("lecturer_auth");
   if (savedLecturer) {
     try {
       currentLecturer = JSON.parse(savedLecturer);
       unlockLecturerPortal();
     } catch (e) {
       sessionStorage.removeItem("lecturer_auth");
+      localStorage.removeItem("lecturer_auth");
     }
   }
 
@@ -69,6 +94,7 @@ async function handleLecturerLogin() {
   try {
     const res = await fetch("/api/lecturer/login", {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ lecturer_id: lecturerId, password: password })
     });
@@ -111,8 +137,14 @@ function unlockLecturerPortal() {
   checkActiveSession();
 }
 
-function logoutLecturer() {
+async function logoutLecturer() {
+  try {
+    await fetch("/api/lecturer/logout", { method: "POST", credentials: "include" });
+  } catch (e) {
+    // Ignore network drop on logout
+  }
   sessionStorage.removeItem("lecturer_auth");
+  localStorage.removeItem("lecturer_auth");
   location.reload();
 }
 
@@ -132,7 +164,7 @@ async function handleCreateSession() {
   }
 
   try {
-    const res = await fetch("/api/lecturer/create-session", {
+    const res = await lecturerFetch("/api/lecturer/create-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -163,7 +195,7 @@ async function handleCreateSession() {
 async function checkActiveSession() {
   if (!currentLecturer) return;
   try {
-    const res = await fetch(`/api/lecturer/active-session/${currentLecturer.lecturer_id}`);
+    const res = await lecturerFetch(`/api/lecturer/active-session/${encodeURIComponent(currentLecturer.lecturer_id)}`);
     const data = await res.json();
     if (data.success && data.has_active_session) {
       activeSession = data.session;
@@ -245,18 +277,11 @@ async function fetchAndRenderRollingOtp(sessionId) {
   try {
     // Only query server when local timer nears 0 or every 10 seconds to save bandwidth
     if (localRollingSecs <= 1 || localRollingSecs >= 29) {
-      const headers = {};
-      if (currentLecturer) {
-        headers["X-Lecturer-Id"] = currentLecturer.lecturer_id;
-        if (currentLecturer.token) headers["X-Lecturer-Token"] = currentLecturer.token;
-      }
-      const res = await fetch(`/api/lecturer/rolling-otp/${sessionId}`, { headers });
+      const res = await lecturerFetch(`/api/lecturer/rolling-otp/${sessionId}`);
       const data = await res.json();
       if (data.success) {
         const otpEl = document.getElementById("rollingOtpDisplay");
-        const nextEl = document.getElementById("rollingNextPreview");
         if (otpEl) otpEl.textContent = data.rolling_otp;
-        if (nextEl) nextEl.textContent = data.next_otp;
         localRollingSecs = data.seconds_remaining;
       }
     } else {
@@ -300,7 +325,7 @@ function updateTimerDisplay(totalSeconds) {
 async function pollAttendees(sessionId) {
   if (!sessionId) return;
   try {
-    const res = await fetch(`/api/lecturer/session-attendees/${sessionId}`);
+    const res = await lecturerFetch(`/api/lecturer/session-attendees/${sessionId}`);
     const data = await res.json();
     if (data.success) {
       renderAttendeesList(data.attendees || []);
@@ -381,7 +406,7 @@ async function closeSessionEarly() {
 
   try {
     const sId = activeSession.id || activeSession.session_id;
-    await fetch("/api/lecturer/close-session", {
+    await lecturerFetch("/api/lecturer/close-session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sId, lecturer_id: currentLecturer.lecturer_id })
@@ -441,7 +466,7 @@ async function handleManualOverrideSubmit() {
   const sessionId = activeSession.id || activeSession.session_id;
 
   try {
-    const res = await fetch("/api/lecturer/manual-override", {
+    const res = await lecturerFetch("/api/lecturer/manual-override", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

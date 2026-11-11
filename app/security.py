@@ -50,17 +50,11 @@ def generate_rolling_otp(session_id: int, secret: str = "", window_seconds: int 
     otp_int = (int(h[:8], 16) % 900000) + 100000
     otp = str(otp_int)
     
-    # Next OTP for preview
-    msg_next = str(step + 1).encode("utf-8")
-    h_next = hmac.new(key, msg_next, hashlib.sha256).hexdigest()
-    otp_next = str((int(h_next[:8], 16) % 900000) + 100000)
-    
     return {
         "otp": otp,
         "seconds_remaining": seconds_remaining,
         "window_seconds": window_seconds,
-        "step": step,
-        "next_otp": otp_next
+        "step": step
     }
 
 def verify_rolling_otp(submitted_code: str, session_id: int, secret: str = "", window_seconds: int = 30) -> bool:
